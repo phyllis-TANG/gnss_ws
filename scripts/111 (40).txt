@@ -1,190 +1,203 @@
-#!/bin/bash
-# 诊断脚本 01：检查 ROS 环境和项目结构
-# 用法：bash 01_diagnose_env.sh
-# 不做任何修改，只是读取信息
+【1】ublox_driver 包目录结构
+------------------------------------------
+total 96
+drwxr-xr-x 10 root root  4096 Apr 22 13:59 .
+drwxrwxr-x  5 1000 1000  4096 Apr 22 13:59 ..
+drwxr-xr-x  8 root root  4096 Apr 22 13:59 .git
+-rw-r--r--  1 root root   293 Apr 22 13:59 .gitignore
+-rw-r--r--  1 root root  1349 Apr 22 13:59 CMakeLists.txt
+-rw-r--r--  1 root root 35149 Apr 22 13:59 LICENSE
+-rw-r--r--  1 root root  6397 Apr 22 13:59 README.md
+drwxr-xr-x  2 root root  4096 Apr 22 13:59 cmake
+drwxr-xr-x  2 root root  4096 Apr 22 13:59 config
+drwxr-xr-x  2 root root  4096 Apr 22 13:59 figures
+drwxr-xr-x  3 root root  4096 Apr 22 13:59 include
+drwxr-xr-x  2 root root  4096 Apr 22 13:59 launch
+-rw-r--r--  1 root root   702 Apr 22 13:59 package.xml
+drwxr-xr-x  2 root root  4096 Apr 22 13:59 src
+drwxr-xr-x  3 root root  4096 Apr 22 13:59 third_party
 
-set +e  # 不因单条命令失败而退出
+子目录：
+/root/gnss_ws/src/ublox_driver
+/root/gnss_ws/src/ublox_driver/.git
+/root/gnss_ws/src/ublox_driver/.git/branches
+/root/gnss_ws/src/ublox_driver/.git/hooks
+/root/gnss_ws/src/ublox_driver/.git/info
+/root/gnss_ws/src/ublox_driver/.git/logs
+/root/gnss_ws/src/ublox_driver/.git/objects
+/root/gnss_ws/src/ublox_driver/.git/refs
+/root/gnss_ws/src/ublox_driver/cmake
+/root/gnss_ws/src/ublox_driver/config
+/root/gnss_ws/src/ublox_driver/figures
+/root/gnss_ws/src/ublox_driver/include
+/root/gnss_ws/src/ublox_driver/include/ublox_driver
+/root/gnss_ws/src/ublox_driver/launch
+/root/gnss_ws/src/ublox_driver/src
+/root/gnss_ws/src/ublox_driver/third_party
+/root/gnss_ws/src/ublox_driver/third_party/yaml
 
-echo "=========================================="
-echo "  GNSS SPP 环境诊断脚本 (只读，不改动)"
-echo "=========================================="
-echo
+【2】launch 文件
+------------------------------------------
+----- /root/gnss_ws/src/ublox_driver/launch/ublox_driver.launch -----
+<launch>
+    <arg name="config_path" default = "$(find ublox_driver)/config/driver_config.yaml" />
+    <node name="ublox_driver" pkg="ublox_driver" type="ublox_driver" output="screen">
+        <param name="config_file" type="string" value="$(arg config_path)" />
+    </node>
+</launch>
 
-echo "【1】系统环境"
-echo "------------------------------------------"
-echo "主机名        : $(hostname)"
-echo "是否在 Docker : $(grep -q docker /proc/1/cgroup 2>/dev/null && echo "是" || ([ -f /.dockerenv ] && echo "是" || echo "否"))"
-echo "Ubuntu 版本   : $(lsb_release -d 2>/dev/null | cut -f2)"
-echo "当前用户      : $(whoami)"
-echo "当前目录      : $(pwd)"
-echo
+【3】config/yaml 文件
+------------------------------------------
+----- /root/gnss_ws/src/ublox_driver/config/driver_config.yaml -----
+%YAML:1.0
 
-echo "【2】ROS 环境"
-echo "------------------------------------------"
-echo "ROS 版本      : $(rosversion -d 2>/dev/null || echo '未检测到 ROS')"
-echo "ROS_DISTRO    : ${ROS_DISTRO:-未设置}"
-echo "ROS_ROOT      : ${ROS_ROOT:-未设置}"
-echo "roscore 路径  : $(which roscore 2>/dev/null || echo '找不到')"
-echo
+# input options
+online: 1           # input from serial port(1) or file(0)
+## if `online == 1` then following options may be set
+input_serial_port: "/dev/ttyACM0"
+serial_baud_rate: 921600
+input_rtcm: 0       # whether input RTCM data to receiver for RTK solution
+rtcm_tcp_port: 3503
+config_receiver_at_start: 0     # whether to config receiver during booting, ** NOT SUPPORT YET **
+receiver_config_filepath: "~/catkin_ws/src/ublox_driver/config/ublox_rcv_config.yaml"
+## if `online == 0` then following options may be set, `serial_baud_rate` is used for speed control
+ubx_filepath: "~/tmp/ublox_driver_test/2020_11_30_7_14_33.ubx"
+rtk_correction_ecef:      # apply RTK correction in case of the position of base station reported in RTCM is biased
+    rows: 3
+    cols: 1
+    dt: d
+    data: [ 0, 0, 0 ]
 
-echo "【3】工作空间结构"
-echo "------------------------------------------"
-WS=/root/gnss_ws
-echo "工作空间路径  : $WS"
-if [ -d "$WS" ]; then
-    echo "子目录列表    :"
-    ls -la "$WS" | awk 'NR>1 {print "  " $NF}' | grep -v '^  \.$\|^  \.\.$'
-else
-    echo "  工作空间不存在！"
-fi
-echo
+# output options
+to_ros: 1           # publish as ros topic
+to_file: 0          # dump data to file
+dump_dir: "~/tmp/ublox_driver_test/"      # dump data to this directory, if applicable
+to_serial: 0        # output data to serial port, for debugging purpose
+output_serial_port: "/dev/ttyACM0"                  # dump data to this serial port, if applicable
 
-echo "【4】src 下的内容"
-echo "------------------------------------------"
-if [ -d "$WS/src" ]; then
-    ls -la "$WS/src" | awk 'NR>1 {print "  " $NF}' | grep -v '^  \.$\|^  \.\.$'
-else
-    echo "  $WS/src 不存在！"
-fi
-echo
 
-echo "【5】查找所有 package.xml（确定 ROS 包位置）"
-echo "------------------------------------------"
-if [ -d "$WS/src" ]; then
+【4】README / 说明文档
+------------------------------------------
+----- /root/gnss_ws/src/ublox_driver/README.md -----
+# ublox_driver
+
+**Authors/Maintainers:** CAO Shaozu (shaozu.cao AT gmail.com)
+
+The *ublox_driver* provides essential functionalities for u-blox GNSS receivers. This package is originally designed for [u-blox ZED-F9P module](https://www.u-blox.com/en/product/zed-f9p-module) according to the specification [UBX-18010854](https://www.u-blox.com/en/docs/UBX-18010854), but should also be compatible to other 8-series or 9-series u-blox receivers as long as the interface is the same.
+
+The following diagram shows all possible input and output options supported by *ublox_driver*.
+
+![ublox_driver diagram!](/figures/ublox_driver_diagram.svg "ublox_driver_diagram")
+
+## 1. Prerequisites
+
+### 1.1 C++11 Compiler
+This package requires some features of C++11.
+
+### 1.2 ROS
+This package is developed under [ROS Kinetic](http://wiki.ros.org/kinetic) environment.
+
+### 1.3 Eigen
+We use [Eigen 3.3.3](https://gitlab.com/libeigen/eigen/-/archive/3.3.3/eigen-3.3.3.zip) for matrix manipulation.
+
+### 1.4 Boost
+Our software utilizes [Boost](https://www.boost.org/) library for serial and socket manipulation. Using command `sudo apt-get install libboost-all-dev` to install *Boost*.
+
+### 1.5 gnss_comm
+This package also requires [gnss_comm](https://github.com/HKUST-Aerial-Robotics/gnss_comm) for ROS message definitions and some utility functions. Follow [those instructions](https://github.com/HKUST-Aerial-Robotics/gnss_comm#1-prerequisites) to build the *gnss_comm* package.
+
+## 2. Build ublox_driver
+Clone the repository to your catkin workspace (for example `~/catkin_ws/`):
+```
+cd ~/catkin_ws/src/
+git clone https://github.com/HKUST-Aerial-Robotics/ublox_driver.git
+```
+Then build the package with:
+```
+cd ~/catkin_ws/
+catkin_make
+source ~/catkin_ws/devel/setup.bash
+```
+## 3. Run with your u-blox receiver
+Our software can take the serial stream from the u-blox receiver as an input source. Before running the package, you need to configure your receiver using [u-center](https://www.u-blox.com/en/product/u-center) to output at least `UBX-RXM-RAWX`, `UBX-RXM-SFRBX` and `UBX-NAV-PVT` messages to a specific serial port (a sample config used in our system can be found at *config/ucenter_config_f9p_gvins.txt*). Then connecting your computer(Linux) with the receiver, make sure the serial port appears as a file in the `/dev/` directory. Then add your account to `dialout` group to obtain permission on serial r/w operation via (no need to substitute $USER):
+```
+sudo usermod -aG dialout $USER
+```
+Open *config/driver_config.yaml*, set `online` and `to_ros` to 1, and adjust `input_serial_port` and `serial_baud_rate` according to your setting. Run the package with:
+```
+roslaunch ublox_driver ublox_driver.launch
+```
+
+Open another terminal, echo the ROS message by:
+```
+rostopic echo /ublox_driver/receiver_lla
+```
+If everything goes smoothly, there should be some ROS messages coming out. Note that some ROS topics remain inactive until the receiver gets GNSS signals. 
+
+Besides the ROS message, you can record the serial stream to a file(`to_file` option) or forward the stream to another serial port(`to_serial` option). All output options can be turned on simultaneously.
+
+### Obtain RTK Solution (Optional)
+If your receiver owns an internal RTK engine (for example, ZED-F9P), you can input RTCM messages from the GNSS base station to the receiver in order to obtain the cm-level accurate RTK localization result. Our software can forward the RTCM stream from a local socket to the receiver's serial port. Nowadays many GNSS stations distribute their RTCM streams via [NTRIP protocol](https://en.wikipedia.org/wiki/Networked_Transport_of_RTCM_via_Internet_Protocol) and you can easily fetch the NTRIP data and map it to a local socket via [RTKLIB](http://www.rtklib.com/). Following those commands to build RTKLIB and setup the RTCM stream:
+```
+git clone https://github.com/tomojitakasu/RTKLIB.git
+cd RTKLIB/
+git checkout rtklib_2.4.3
+cd app/consapp/str2str/gcc/
+make
+./str2str -in ntrip://${NTRIP_SITE}:${NTRIP_PORT}/${MOUNT_POINT} -out tcpsvr://:3503
+```
+Then set the `input_rtcm` option to `1` in *config/driver_config.yaml* and launch the ros node with:
+```
+roslaunch ublox_driver ublox_driver.launch
+```
+If the field `carr_soln` in `/ublox_driver/receiver_pvt` message becomes `2`, the RTK is in fix status. If you find the location of the GNSS base station reported in the RTCM message is somehow biased, you can apply correction via the variable `rtk_correction_ecef` in the config file.
+
+## 4. Playback Log Files
+
+Our package can also take an log file as the input. The log file can be recorded via [u-center](https://www.u-blox.com/en/product/u-center), RTKLIB or our package itself. To playback the log file, you need to set `online` to `0` and point `ubx_filepath` to your log file in the config file. Then launch the ros node with:
+```
+roslaunch ublox_driver ublox_driver.launch
+```
+Similar to the online receiver manner, all three output options are also supported in the playback mode. Note that the playback speed is controlled by the `serial_baud_rate` variable in the config file.
+...
+
+
+【5】可执行节点（check CMakeLists）
+------------------------------------------
+add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_DIR}/src/ublox_driver.cpp 
+add_executable(sync_system_time ${PROJECT_SOURCE_DIR}/src/sync_system_time.cpp)
+
+编译产出的节点：
+/root/gnss_ws/devel/lib/ublox_driver/ublox_driver
+/root/gnss_ws/devel/lib/ublox_driver/sync_system_time
+
+【6】关键消息类型
+------------------------------------------
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:    pub_pvt_ = nh_.advertise<GnssPVTSolnMsg>("receiver_pvt", 100);
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:    pub_range_meas_ = nh_.advertise<GnssMeasMsg>("range_meas", 100);
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:    pub_ephem_ = nh_.advertise<GnssEphemMsg>("ephem", 100);
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:    pub_glo_ephem_ = nh_.advertise<GnssGloEphemMsg>("glo_ephem", 100);
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:    pub_iono_ = nh_.advertise<StampedFloat64Array>("iono_params", 100);
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:        GnssMeasMsg meas_msg = meas2msg(meas);
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:                GnssGloEphemMsg glo_ephem_msg = glo_ephem2msg(std::dynamic_pointer_cast<GloEphem>(ephem));
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:                GnssEphemMsg ephem_msg = ephem2msg(std::dynamic_pointer_cast<Ephem>(ephem));
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:            StampedFloat64Array iono_msg;
+/root/gnss_ws/src/ublox_driver/src/ublox_message_processor.cpp:        GnssPVTSolnMsg pvt_msg = pvt2msg(pvt_soln);
+
+【7】UBX 文件位置
+------------------------------------------
+/root/gnss_ws/data/bags/2026-4-15_175419_serial-COM5(1) (1).ubx
+/root/gnss_ws/data/bags/input.ubx
+
+【8】检查 ublox_driver 支持的输入模式（串口 vs 文件）
+------------------------------------------
+/root/gnss_ws/src/ublox_driver/src/ublox_driver.cpp:177:        file_loader.reset(new FileLoader(pm.ubx_filepath, pm.serial_baud_rate));
+/root/gnss_ws/src/ublox_driver/config/driver_config.yaml:13:ubx_filepath: "~/tmp/ublox_driver_test/2020_11_30_7_14_33.ubx"
+
 ==========================================
-    find "$WS/src" -name "package.xml" 2>/dev/null | while read f; do
-        pkg=$(grep -oP '(?<=<name>)[^<]+' "$f" | head -1)
-        echo "  $pkg  ←  $(dirname $f)"
-    done
-fi
-echo
-
-echo "【6】catkin 识别到的包（关键）"
-echo "------------------------------------------"
-if [ -f "$WS/devel/setup.bash" ]; then
-    source "$WS/devel/setup.bash"
-    echo "  已 source devel/setup.bash"
-    for pkg in del1RTK gnss_comm novatel_msgs ublox_driver rviz_osm del2AINLOS del3CRTK del4MSF del5CAS; do
-        path=$(rosp  GNSS SPP 环境诊断脚本 (只读，不改动)
-ack find "$pkg" 2>/dev/null)
-        if [ -n "$path" ]; then
-            echo "  ✓ $pkg: $path"
-        else
-            echo "  ✗ $pkg: 未找到"
-        fi
-    done
-else
-    echo "  没找到 devel/setup.bash，工作空间尚未编译"
-fi
-echo
-
-echo "【7】关键依赖库"
-echo "---------------==========================================
----------------------------"
-for lib in Eigen3 GTSAM GeographicLib; do
-    result=$(apt list --installed 2>/dev/null | grep -i "libeigen3\|libgtsam\|libgeographiclib" | head -3)
-done
-echo "  Eigen3      : $(dpkg -l libeigen3-dev 2>/dev/null | awk '/
-^ii/{print $3}' || echo '未安装')"
-echo "  GTSAM       : $(ls /usr/local/lib/libgtsam.so* 2>/dev/null | head -1 || dpkg -l libgtsam-dev 2>/dev/null | awk '/^ii/{print $3}' || echo '未找到')"
-echo "  GeographicLib: $(dpkg -l libgeographic-dev 2>/dev【1】系统环境
-/null | awk '/^ii/{print $3}' || dpkg -l libgeographiclib-dev 2>/dev/null | awk '/^ii/{print $3}' || echo '未找到')"
-echo
-
-echo "【8】git 状态"
-echo "------------------------------------------"
-if [ -d "$WS/.git" ]; then
-    cd "$WS"
-    ------------------------------------------
-echo "  当前分支  : $(git branch --show-current 2>/dev/null)"
-    echo "  远程仓库  :"
-    git remote -v | sed 's/^/    /'
-else
-    echo "  $WS 不是 git 仓库"
-fi
-echo
-
-echo "=========================================="
-echo "  诊断完成！请把以上输出发给 Claude"
-echo "=========================================="主机名        : e8d32d429cd8
-是否在 Docker : 是
-Ubuntu 版本   : Ubuntu 20.04.6 LTS
-当前用户      : root
-当前目录      : /root/gnss_ws
-
-【2】ROS 环境
-------------------------------------------
-ROS 版本      : noetic
-ROS_DISTRO    : noetic
-ROS_ROOT      : /opt/ros/noetic/share/ros
-roscore 路径  : /opt/ros/noetic/bin/roscore
-
-【3】工作空间结构
-------------------------------------------
-工作空间路径  : /root/gnss_ws
-子目录列表    :
-  .catkin_workspace
-  .git
-  .gitignore
-  build
-  data
-  devel
-  src
-
-【4】src 下的内容
-------------------------------------------
-  /opt/ros/noetic/share/catkin/cmake/toplevel.cmake
-  PSRI-73-2309-PR-Dev-main
-  sudo
-  ublox_driver
-  voice_control
-
-【5】查找所有 package.xml（确定 ROS 包位置）
-------------------------------------------
-  ublox_driver  ←  /root/gnss_ws/src/ublox_driver
-  fast_lio_multi  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/fast_lio_multi
-  del3CRTK  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del3CRTK
-  gnss_comm  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/gnss_comm
-  del1RTK  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del1RTK
-  del5CAS  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del5CAS
-  fast_gicp  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/fast_gicp
-  novatel_msgs  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/novatel_msgs
-  livox_ros_driver2  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/livox_ros_driver2
-  rviz_osm  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/rviz_osm
-  del2AINLOS  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS
-  del4MSF  ←  /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del4MSF
-  voice_control  ←  /root/gnss_ws/src/voice_control
-
-【6】catkin 识别到的包（关键）
-------------------------------------------
-  已 source devel/setup.bash
-  ✓ del1RTK: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del1RTK
-  ✓ gnss_comm: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/gnss_comm
-  ✓ novatel_msgs: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/novatel_msgs
-  ✓ ublox_driver: /root/gnss_ws/src/ublox_driver
-  ✓ rviz_osm: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/rviz_osm
-  ✓ del2AINLOS: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS
-  ✓ del3CRTK: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del3CRTK
-  ✓ del4MSF: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del4MSF
-  ✓ del5CAS: /root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del5CAS
-
-【7】关键依赖库
-------------------------------------------
-  Eigen3      : 3.3.7-2
-  GTSAM       : /usr/local/lib/libgtsam.so
-  GeographicLib: 1.50.1-1build1
-
-【8】git 状态
-------------------------------------------
-  当前分支  : 
-  远程仓库  :
-fatal: detected dubious ownership in repository at '/root/gnss_ws'
-To add an exception for this directory, call:
-
-	git config --global --add safe.directory /root/gnss_ws
-
+  诊断完成
 ==========================================
-  诊断完成！请把以上输出发给 Claude
-==========================================
+root@e8d32d429cd8:~/gnss_ws# 
+
 
 

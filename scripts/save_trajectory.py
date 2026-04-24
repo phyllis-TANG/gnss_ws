@@ -16,8 +16,7 @@ from sensor_msgs.msg import NavSatFix
 spp_pts = []
 pvt_pts = []
 
-OUT_DIR = '/root/gnss_ws/spp_results'
-os.makedirs(OUT_DIR, exist_ok=True)
+OUT_DIR = '/tmp'
 
 def spp_cb(msg):
     if abs(msg.latitude) < 0.01:

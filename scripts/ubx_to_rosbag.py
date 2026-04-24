@@ -397,9 +397,9 @@ def convert(ubx_path, nav_path, bag_path):
                     fix = NavSatFix(
                         header=hdr,
                         status=status,
-                        latitude=float(parsed.lat) * 1e-7,
-                        longitude=float(parsed.lon) * 1e-7,
-                        altitude=float(parsed.height) * 1e-3,
+                        latitude=float(parsed.lat),           # pyubx2 already in degrees
+                        longitude=float(parsed.lon),          # pyubx2 already in degrees
+                        altitude=float(parsed.height) * 1e-3, # mm → m
                         position_covariance=np.zeros(9, dtype=np.float64),
                         position_covariance_type=np.uint8(0),
                     )

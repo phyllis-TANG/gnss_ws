@@ -1,3 +1,4 @@
 PSRI-73-2309-PR-Dev/
 *.ubx
 *.UBX
+scripts/__pycache__/

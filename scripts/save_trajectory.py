@@ -16,7 +16,7 @@ from sensor_msgs.msg import NavSatFix
 spp_pts = []
 pvt_pts = []
 
-OUT_DIR = '/tmp'
+OUT_DIR = '/root'
 
 def spp_cb(msg):
     if abs(msg.latitude) < 0.01:

@@ -1,118 +1,76 @@
 #!/usr/bin/env python3
 """
-save_trajectory.py
-订阅 SPP 定位结果，保存为 CSV + 离线 HTML 地图
-用法：在跑 eval_spp.launch 的同时，在另一个终端运行本脚本
-结束后按 Ctrl+C，自动生成 /root/gnss_ws/spp_results/trajectory.html
+save_trajectory.py — 收集 SPP 定位结果，bag 播完后自动生成 HTML 地图
+保存位置：/root/trajectory.html
 """
 
-import rospy
-import csv
-import os
-import signal
-import sys
+import rospy, os, csv
 from sensor_msgs.msg import NavSatFix
 
 spp_pts = []
 pvt_pts = []
 
-OUT_DIR = '/root'
-
 def spp_cb(msg):
-    if abs(msg.latitude) < 0.01:
+    if abs(msg.latitude) < 0.1:
         return
     spp_pts.append((msg.latitude, msg.longitude, msg.altitude))
-    print(f'\r[SPP] {len(spp_pts)} pts  lat={msg.latitude:.6f}  lon={msg.longitude:.6f}  alt={msg.altitude:.1f}m', end='', flush=True)
+    print(f'\r[SPP] {len(spp_pts)} pts  {msg.latitude:.5f},{msg.longitude:.5f}', end='', flush=True)
 
 def pvt_cb(msg):
-    if abs(msg.latitude) < 0.01:
+    if abs(msg.latitude) < 0.1:
         return
     pvt_pts.append((msg.latitude, msg.longitude, msg.altitude))
 
-def save_and_exit(sig=None, frame=None):
-    print(f'\n\n保存中...')
+def on_shutdown():
+    print('\n\n--- 生成文件中 ---')
 
-    # ── CSV ──────────────────────────────────────────────────────────────────
-    csv_path = os.path.join(OUT_DIR, 'spp_trajectory.csv')
+    if not spp_pts:
+        print('没有收到 SPP 数据，请确认 SPP 节点在正常输出定位结果')
+        return
+
+    # CSV
+    csv_path = '/root/trajectory.csv'
     with open(csv_path, 'w', newline='') as f:
         w = csv.writer(f)
         w.writerow(['lat', 'lon', 'alt_m'])
         w.writerows(spp_pts)
-    print(f'CSV 已保存: {csv_path}')
+    print(f'CSV: {csv_path}  ({len(spp_pts)} 行)')
 
-    # ── HTML ─────────────────────────────────────────────────────────────────
-    if not spp_pts:
-        print('没有收到 SPP 数据，跳过 HTML 生成')
-        sys.exit(0)
-
-    center_lat = sum(p[0] for p in spp_pts) / len(spp_pts)
-    center_lon = sum(p[1] for p in spp_pts) / len(spp_pts)
-
-    spp_js  = str([[p[0], p[1]] for p in spp_pts])
-    pvt_js  = str([[p[0], p[1]] for p in pvt_pts])
+    # HTML
+    clat = sum(p[0] for p in spp_pts) / len(spp_pts)
+    clon = sum(p[1] for p in spp_pts) / len(spp_pts)
+    spp_js = str([[round(p[0],6), round(p[1],6)] for p in spp_pts])
+    pvt_js = str([[round(p[0],6), round(p[1],6)] for p in pvt_pts])
 
     html = f"""<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8"/>
-<title>GNSS SPP 轨迹</title>
+<html><head><meta charset="utf-8"/><title>SPP 轨迹</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-html, body {{ height:100%; font-family: system-ui, sans-serif; }}
-#map {{ height:100%; width:100%; }}
-.panel {{
-  position:absolute; top:12px; right:12px; z-index:1000;
-  background:rgba(255,255,255,0.93); border-radius:10px;
-  padding:14px 18px; box-shadow:0 2px 12px rgba(0,0,0,.2);
-  font-size:13px; line-height:1.8; min-width:200px;
-}}
-.dot {{ display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; }}
-</style>
-</head>
-<body>
+<style>html,body{{height:100%;margin:0}}#map{{height:100%}}.box{{position:absolute;top:10px;right:10px;z-index:999;background:rgba(255,255,255,.9);padding:12px 16px;border-radius:8px;font:13px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.2)}}</style>
+</head><body>
 <div id="map"></div>
-<div class="panel">
-  <b>GNSS SPP 轨迹</b><br>
-  <span class="dot" style="background:#2196F3"></span>SPP ({len(spp_pts)} 点)<br>
-  <span class="dot" style="background:#FF9800"></span>u-blox PVT ({len(pvt_pts)} 点)<br>
-  <hr style="margin:6px 0">
-  中心: {center_lat:.5f}°N<br>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{center_lon:.5f}°E
-</div>
+<div class="box"><b>GNSS SPP 轨迹</b><br>
+<span style="color:#2196F3">■</span> SPP ({len(spp_pts)} pts)<br>
+<span style="color:#FF9800">■</span> PVT ref ({len(pvt_pts)} pts)<br>
+中心 {clat:.5f}°N, {clon:.5f}°E</div>
 <script>
-var spp = {spp_js};
-var pvt = {pvt_js};
-var map = L.map('map').setView([{center_lat}, {center_lon}], 16);
-L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-  maxZoom:19, attribution:'© OpenStreetMap contributors'
-}}).addTo(map);
-if (spp.length) {{
-  L.polyline(spp, {{color:'#2196F3', weight:3}}).addTo(map);
-  L.circleMarker(spp[0],  {{radius:6, color:'#1565C0', fillColor:'#2196F3', fillOpacity:1}}).bindTooltip('起点').addTo(map);
-  L.circleMarker(spp[spp.length-1], {{radius:6, color:'#1565C0', fillColor:'#00BCD4', fillOpacity:1}}).bindTooltip('终点').addTo(map);
-}}
-if (pvt.length) {{
-  L.polyline(pvt, {{color:'#FF9800', weight:2, dashArray:'6 4', opacity:0.7}}).addTo(map);
-}}
-if (spp.length) map.fitBounds(L.latLngBounds(spp).pad(0.15));
-</script>
-</body>
-</html>"""
+var map=L.map('map').setView([{clat},{clon}],16);
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OSM'}}).addTo(map);
+var s={spp_js}, p={pvt_js};
+if(s.length){{L.polyline(s,{{color:'#2196F3',weight:3}}).addTo(map);map.fitBounds(L.latLngBounds(s).pad(.15));}}
+if(p.length) L.polyline(p,{{color:'#FF9800',weight:2,dashArray:'5 4',opacity:.7}}).addTo(map);
+</script></body></html>"""
 
-    html_path = os.path.join(OUT_DIR, 'trajectory.html')
+    html_path = '/root/trajectory.html'
     with open(html_path, 'w') as f:
         f.write(html)
-    print(f'HTML 已保存: {html_path}')
-    print(f'\n把这个文件复制到 Windows，用浏览器打开即可看到地图！')
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, save_and_exit)
-signal.signal(signal.SIGTERM, save_and_exit)
+    print(f'HTML: {html_path}')
+    print('\n完成！用这条命令拷出来：')
+    print('  sudo docker cp $(sudo docker ps -q):/root/trajectory.html ~/trajectory.html')
 
 rospy.init_node('save_trajectory', anonymous=True)
-rospy.Subscriber('/gnss_spp_node/spp/navsatfix',   NavSatFix, spp_cb, queue_size=1000)
-rospy.Subscriber('/ublox_driver/receiver_lla',      NavSatFix, pvt_cb, queue_size=1000)
-print('[save_trajectory] 开始记录，跑完 bag 后按 Ctrl+C 生成地图文件...')
+rospy.on_shutdown(on_shutdown)
+rospy.Subscriber('/gnss_spp_node/spp/navsatfix', NavSatFix, spp_cb, queue_size=2000)
+rospy.Subscriber('/ublox_driver/receiver_lla',   NavSatFix, pvt_cb, queue_size=2000)
+print('记录中... bag 播完或按 Ctrl+C 后自动保存')
 rospy.spin()

@@ -232,6 +232,7 @@ def main():
     Header          = T['std_msgs/msg/Header']
     RosTime         = T['builtin_interfaces/msg/Time']
     NavSatFix       = T['sensor_msgs/msg/NavSatFix']
+    NavSatStatus    = T['sensor_msgs/msg/NavSatStatus']
 
     def make_gps_time(unix_t):
         week, tow = unix_to_gps(unix_t)
@@ -389,6 +390,7 @@ def main():
                 _ser(ts,msg, 'gnss_comm/msg/GnssMeasMsg'))
 
             fix = NavSatFix(header=hdr,
+                status=NavSatStatus(status=np.int8(0), service=np.uint16(1)),
                 latitude=np.float64(args.lat), longitude=np.float64(args.lon),
                 altitude=np.float64(args.alt),
                 position_covariance=np.zeros(9, dtype=np.float64),

@@ -239,7 +239,8 @@ def main():
 
     # ── typestore ──────────────────────────────────────────────────────────────
     for p in ['/root/gnss_ws/src/gnss_comm/msg',
-              '/root/gnss_ws/devel/share/gnss_comm/msg']:
+              '/root/gnss_ws/devel/share/gnss_comm/msg',
+              '/root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/gnss_comm/msg']:
         if Path(p).exists():
             GNSS_COMM = Path(p); break
     else:

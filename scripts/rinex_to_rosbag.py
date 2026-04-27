@@ -271,13 +271,16 @@ def main():
         c_lla  = writer.add_connection('/ublox_driver/receiver_lla',
                     'sensor_msgs/msg/NavSatFix', typestore=ts)
 
-        # 先写所有星历
+        # 先写所有星历，时间戳设在第一个观测历元之前1秒，确保 del1RTK 先收到星历
+        first_epoch_t = epochs[0][0] if epochs else 0
+        ephem_ts = int((first_epoch_t - 1.0) * 1e9)
+
         ephem_seen = set()
         for ep in ephems:
             key = f"{ep['sys']}{ep['prn']}_{int(ep['toc_unix'])}"
             if key in ephem_seen: continue
             ephem_seen.add(key)
-            ros_ts = int(ep['toc_unix'] * 1e9)
+            ros_ts = ephem_ts
             sn = sat_no(ep['sys'], ep['prn'])
             gt = make_gps_time(ep['toc_unix'])
 

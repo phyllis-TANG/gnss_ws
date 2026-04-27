@@ -194,49 +194,24 @@ def main():
     ap.add_argument('--alt',  type=float, default=50.0)
     args = ap.parse_args()
 
-    from rosbags.rosbag1 import Writer
-    from rosbags.typesys import get_typestore, get_types_from_msg, Stores
-
-    # ── typestore ──────────────────────────────────────────────────────────────
-    for p in ['/root/gnss_ws/src/gnss_comm/msg',
-              '/root/gnss_ws/devel/share/gnss_comm/msg',
-              '/root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/gnss_comm/msg']:
-        if Path(p).exists():
-            GNSS_COMM = Path(p); break
-    else:
-        print('[错误] 找不到 gnss_comm msg，请确认 del1RTK 已编译'); sys.exit(1)
-
-    add_types = {}
-    for mf in GNSS_COMM.glob('*.msg'):
-        try:
-            add_types.update(get_types_from_msg(
-                mf.read_text(), f'gnss_comm/msg/{mf.stem}'))
-        except Exception as ex:
-            pass
-
-    ts = get_typestore(Stores.ROS1_NOETIC)
-    ts.register(add_types)
-
-    # 兼容不同版本 rosbags 的序列化 API（ts 创建后再检测）
-    if hasattr(ts, 'serialize_cdr'):
-        def _ser(ts, msg, typename): return ts.serialize_cdr(msg, typename)
-    else:
-        def _ser(ts, msg, typename): return ts.serialize(msg, typename)
-    T = ts.types
-
-    GnssMeasMsg     = T['gnss_comm/msg/GnssMeasMsg']
-    GnssObsMsg      = T['gnss_comm/msg/GnssObsMsg']
-    GnssTimeMsg     = T['gnss_comm/msg/GnssTimeMsg']
-    GnssEphemMsg    = T['gnss_comm/msg/GnssEphemMsg']
-    GnssGloEphemMsg = T['gnss_comm/msg/GnssGloEphemMsg']
-    Header          = T['std_msgs/msg/Header']
-    RosTime         = T['builtin_interfaces/msg/Time']
-    NavSatFix       = T['sensor_msgs/msg/NavSatFix']
-    NavSatStatus    = T['sensor_msgs/msg/NavSatStatus']
+    # 使用 ROS1 原生 rosbag + 编译好的消息类，确保序列化完全兼容
+    try:
+        import rosbag, rospy
+        from gnss_comm.msg import (GnssMeasMsg, GnssObsMsg, GnssTimeMsg,
+                                    GnssEphemMsg, GnssGloEphemMsg)
+        from sensor_msgs.msg import NavSatFix, NavSatStatus
+        from std_msgs.msg import Header
+    except ImportError as e:
+        print(f'[错误] 无法导入 ROS 消息: {e}')
+        print('请先执行: source /root/gnss_ws/devel/setup.bash')
+        sys.exit(1)
 
     def make_gps_time(unix_t):
         week, tow = unix_to_gps(unix_t)
-        return GnssTimeMsg(week=np.uint32(week), tow=np.float64(tow))
+        m = GnssTimeMsg()
+        m.week = int(week)
+        m.tow  = float(tow)
+        return m
 
     # ── 解析 ──────────────────────────────────────────────────────────────────
     print(f'[1/3] 解析 obs: {args.obs}')
@@ -261,97 +236,85 @@ def main():
     print(f'[3/3] 写入 bag: {args.out}')
     n_meas = 0
 
-    with Writer(str(out_path)) as writer:
-        c_meas = writer.add_connection('/ublox_driver/range_meas',
-                    'gnss_comm/msg/GnssMeasMsg', typestore=ts)
-        c_gps  = writer.add_connection('/ublox_driver/ephem',
-                    'gnss_comm/msg/GnssEphemMsg', typestore=ts)
-        c_glo  = writer.add_connection('/ublox_driver/glo_ephem',
-                    'gnss_comm/msg/GnssGloEphemMsg', typestore=ts)
-        c_lla  = writer.add_connection('/ublox_driver/receiver_lla',
-                    'sensor_msgs/msg/NavSatFix', typestore=ts)
+    first_epoch_t = epochs[0][0] if epochs else 0
+    ephem_ros_t   = rospy.Time(int(first_epoch_t - 1), 0)
 
-        # 先写所有星历，时间戳设在第一个观测历元之前1秒，确保 del1RTK 先收到星历
-        first_epoch_t = epochs[0][0] if epochs else 0
-        ephem_ts = int((first_epoch_t - 1.0) * 1e9)
-
+    with rosbag.Bag(str(out_path), 'w') as bag:
+        # 先写所有星历（时间戳在第一个观测历元前1秒）
         ephem_seen = set()
         for ep in ephems:
             key = f"{ep['sys']}{ep['prn']}_{int(ep['toc_unix'])}"
             if key in ephem_seen: continue
             ephem_seen.add(key)
-            ros_ts = ephem_ts
             sn = sat_no(ep['sys'], ep['prn'])
-            gt = make_gps_time(ep['toc_unix'])
 
             if ep['sys'] == 'R':
-                msg = GnssGloEphemMsg(
-                    sat=np.uint32(sn),
-                    ttr=gt, toe=gt,
-                    freqo=np.int32(ep.get('freqo', 0)),
-                    iode=np.uint32(0),
-                    health=np.uint32(ep.get('health', 0)),
-                    age=np.uint32(0),
-                    ura=np.float64(1.0),
-                    pos_x=np.float64(ep.get('pos_x', 0)),
-                    pos_y=np.float64(ep.get('pos_y', 0)),
-                    pos_z=np.float64(ep.get('pos_z', 0)),
-                    vel_x=np.float64(ep.get('vel_x', 0)),
-                    vel_y=np.float64(ep.get('vel_y', 0)),
-                    vel_z=np.float64(ep.get('vel_z', 0)),
-                    acc_x=np.float64(ep.get('acc_x', 0)),
-                    acc_y=np.float64(ep.get('acc_y', 0)),
-                    acc_z=np.float64(ep.get('acc_z', 0)),
-                    tau_n=np.float64(ep.get('tau_n', 0)),
-                    gamma=np.float64(ep.get('gamma', 0)),
-                    delta_tau_n=np.float64(0))
-                writer.write(c_glo, ros_ts,
-                    _ser(ts,msg, 'gnss_comm/msg/GnssGloEphemMsg'))
+                msg = GnssGloEphemMsg()
+                msg.sat        = int(sn)
+                msg.ttr        = make_gps_time(ep['toc_unix'])
+                msg.toe        = make_gps_time(ep['toc_unix'])
+                msg.freqo      = int(ep.get('freqo', 0))
+                msg.iode       = 0
+                msg.health     = int(ep.get('health', 0))
+                msg.age        = 0
+                msg.ura        = 1.0
+                msg.pos_x      = float(ep.get('pos_x', 0))
+                msg.pos_y      = float(ep.get('pos_y', 0))
+                msg.pos_z      = float(ep.get('pos_z', 0))
+                msg.vel_x      = float(ep.get('vel_x', 0))
+                msg.vel_y      = float(ep.get('vel_y', 0))
+                msg.vel_z      = float(ep.get('vel_z', 0))
+                msg.acc_x      = float(ep.get('acc_x', 0))
+                msg.acc_y      = float(ep.get('acc_y', 0))
+                msg.acc_z      = float(ep.get('acc_z', 0))
+                msg.tau_n      = float(ep.get('tau_n', 0))
+                msg.gamma      = float(ep.get('gamma', 0))
+                msg.delta_tau_n = 0.0
+                bag.write('/ublox_driver/glo_ephem', msg, t=ephem_ros_t)
             else:
                 sqrtA = ep['sqrtA']
-                A     = sqrtA * sqrtA   # 半长轴 A = sqrtA^2
-                msg = GnssEphemMsg(
-                    sat=np.uint32(sn),
-                    ttr=gt,
-                    toe=GnssTimeMsg(week=np.uint32(ep['toe_week']),
-                                    tow=np.float64(ep['toe_tow'])),
-                    toc=GnssTimeMsg(week=np.uint32(ep['toc_week']),
-                                    tow=np.float64(ep['toc_tow'])),
-                    toe_tow=np.float64(ep['toe_tow']),
-                    week=np.uint32(ep['week']),
-                    iode=np.uint32(ep['iode']),
-                    iodc=np.uint32(ep.get('iodc', 0)),
-                    health=np.uint32(ep.get('health', 0)),
-                    code=np.uint32(0),
-                    ura=np.float64(2.0),
-                    A=np.float64(A),
-                    e=np.float64(ep['e']),
-                    i0=np.float64(ep['i0']),
-                    omg=np.float64(ep['omg']),
-                    OMG0=np.float64(ep['OMG0']),
-                    M0=np.float64(ep['M0']),
-                    delta_n=np.float64(ep['delta_n']),
-                    OMG_dot=np.float64(ep['OMG_dot']),
-                    i_dot=np.float64(ep['i_dot']),
-                    cuc=np.float64(ep['cuc']), cus=np.float64(ep['cus']),
-                    crc=np.float64(ep['crc']), crs=np.float64(ep['crs']),
-                    cic=np.float64(ep['cic']), cis=np.float64(ep['cis']),
-                    af0=np.float64(ep['af0']),
-                    af1=np.float64(ep['af1']),
-                    af2=np.float64(ep['af2']),
-                    tgd0=np.float64(ep.get('tgd0', 0)),
-                    tgd1=np.float64(0),
-                    A_dot=np.float64(0),
-                    n_dot=np.float64(0))
-                writer.write(c_gps, ros_ts,
-                    _ser(ts,msg, 'gnss_comm/msg/GnssEphemMsg'))
+                msg = GnssEphemMsg()
+                msg.sat        = int(sn)
+                msg.ttr        = make_gps_time(ep['toc_unix'])
+                msg.toe        = make_gps_time(ep['toc_unix'])
+                msg.toe.week   = int(ep['toe_week'])
+                msg.toe.tow    = float(ep['toe_tow'])
+                msg.toc        = make_gps_time(ep['toc_unix'])
+                msg.toe_tow    = float(ep['toe_tow'])
+                msg.week       = int(ep['week'])
+                msg.iode       = int(ep['iode'])
+                msg.iodc       = int(ep.get('iodc', 0))
+                msg.health     = int(ep.get('health', 0))
+                msg.code       = 0
+                msg.ura        = 2.0
+                msg.A          = float(sqrtA * sqrtA)
+                msg.e          = float(ep['e'])
+                msg.i0         = float(ep['i0'])
+                msg.omg        = float(ep['omg'])
+                msg.OMG0       = float(ep['OMG0'])
+                msg.M0         = float(ep['M0'])
+                msg.delta_n    = float(ep['delta_n'])
+                msg.OMG_dot    = float(ep['OMG_dot'])
+                msg.i_dot      = float(ep['i_dot'])
+                msg.cuc        = float(ep['cuc'])
+                msg.cus        = float(ep['cus'])
+                msg.crc        = float(ep['crc'])
+                msg.crs        = float(ep['crs'])
+                msg.cic        = float(ep['cic'])
+                msg.cis        = float(ep['cis'])
+                msg.af0        = float(ep['af0'])
+                msg.af1        = float(ep['af1'])
+                msg.af2        = float(ep['af2'])
+                msg.tgd0       = float(ep.get('tgd0', 0))
+                msg.tgd1       = 0.0
+                msg.A_dot      = 0.0
+                msg.n_dot      = 0.0
+                bag.write('/ublox_driver/ephem', msg, t=ephem_ros_t)
 
-        # 写测量值
+        # 写观测测量值
         for idx, (t, sv_data) in enumerate(epochs):
-            ros_ts = int(t * 1e9)
-            gps_t  = make_gps_time(t)
-            sec_i  = int(t); nsec_i = int((t % 1) * 1e9)
-            hdr    = Header(seq=np.uint32(0), stamp=RosTime(sec=sec_i, nanosec=nsec_i), frame_id='')
+            ros_t = rospy.Time(int(t), int((t % 1) * 1e9))
+            gps_t = make_gps_time(t)
 
             obs_list = []
             for sv, vals in sv_data.items():
@@ -361,45 +324,48 @@ def main():
                 sn = sat_no(sys_char, prn)
                 if sn == 0: continue
 
-                psr  = next((vals[k] for k in psr_cols if k in vals and not np.isnan(vals[k]) and vals[k]>1e4), None)
+                psr = next((vals[k] for k in psr_cols if k in vals and not np.isnan(vals[k]) and vals[k]>1e4), None)
                 if psr is None: continue
 
                 snr  = next((vals[k] for k in snr_cols if k in vals and not np.isnan(vals[k])), 0.0)
                 dopp = next((vals[k] for k in dop_cols if k in vals and not np.isnan(vals[k])), 0.0)
                 cp   = next((vals[k] for k in cp_cols  if k in vals and not np.isnan(vals[k])), 0.0)
-                freq = l1_freq(sys_char)
-                status = np.uint8(0x01)  # psr valid
 
-                obs_list.append(GnssObsMsg(
-                    time=gps_t,
-                    sat=np.uint32(sn),
-                    freqs=np.array([freq], dtype=np.float64),
-                    CN0=np.array([snr], dtype=np.float64),
-                    LLI=np.array([0], dtype=np.uint8),
-                    code=np.array([0], dtype=np.uint8),
-                    psr=np.array([psr], dtype=np.float64),
-                    psr_std=np.array([1.0], dtype=np.float64),
-                    cp=np.array([cp], dtype=np.float64),
-                    cp_std=np.array([0.003], dtype=np.float64),
-                    dopp=np.array([dopp], dtype=np.float64),
-                    dopp_std=np.array([1.0], dtype=np.float64),
-                    status=np.array([status], dtype=np.uint8),
-                ))
+                obs = GnssObsMsg()
+                obs.time      = gps_t
+                obs.sat       = int(sn)
+                obs.freqs     = [float(l1_freq(sys_char))]
+                obs.CN0       = [float(snr)]
+                obs.LLI       = [0]
+                obs.code      = [0]
+                obs.psr       = [float(psr)]
+                obs.psr_std   = [1.0]
+                obs.cp        = [float(cp)]
+                obs.cp_std    = [0.003]
+                obs.dopp      = [float(dopp)]
+                obs.dopp_std  = [1.0]
+                obs.status    = [1]
+                obs_list.append(obs)
 
-            if not obs_list: i += 1; continue
+            if not obs_list:
+                continue
 
-            msg = GnssMeasMsg(meas=obs_list)
-            writer.write(c_meas, ros_ts,
-                _ser(ts,msg, 'gnss_comm/msg/GnssMeasMsg'))
+            meas = GnssMeasMsg()
+            meas.meas = obs_list
+            bag.write('/ublox_driver/range_meas', meas, t=ros_t)
 
-            fix = NavSatFix(header=hdr,
-                status=NavSatStatus(status=np.int8(0), service=np.uint16(1)),
-                latitude=np.float64(args.lat), longitude=np.float64(args.lon),
-                altitude=np.float64(args.alt),
-                position_covariance=np.zeros(9, dtype=np.float64),
-                position_covariance_type=np.uint8(0))
-            writer.write(c_lla, ros_ts,
-                _ser(ts,fix, 'sensor_msgs/msg/NavSatFix'))
+            fix = NavSatFix()
+            fix.header.seq       = 0
+            fix.header.stamp     = ros_t
+            fix.header.frame_id  = ''
+            fix.status.status    = 0
+            fix.status.service   = 1
+            fix.latitude         = float(args.lat)
+            fix.longitude        = float(args.lon)
+            fix.altitude         = float(args.alt)
+            fix.position_covariance = [0.0] * 9
+            fix.position_covariance_type = 0
+            bag.write('/ublox_driver/receiver_lla', fix, t=ros_t)
             n_meas += 1
 
             if (idx+1) % 50 == 0 or idx == len(epochs)-1:

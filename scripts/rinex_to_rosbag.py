@@ -347,7 +347,7 @@ def main():
             ros_ts = int(t * 1e9)
             gps_t  = make_gps_time(t)
             sec_i  = int(t); nsec_i = int((t % 1) * 1e9)
-            hdr    = Header(stamp=RosTime(sec=sec_i, nanosec=nsec_i), frame_id='')
+            hdr    = Header(seq=np.uint32(0), stamp=RosTime(sec=sec_i, nanosec=nsec_i), frame_id='')
 
             obs_list = []
             for sv, vals in sv_data.items():

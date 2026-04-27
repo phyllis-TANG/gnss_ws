@@ -1,13 +1,21 @@
-# UrbanNav Medium-Urban-1 — 从零到 SPP 分析（复制粘贴版）
+# UrbanNav Medium-Urban-1 — SPP 分析完整步骤
 
-> 数据集：UrbanNav-HK-Medium-Urban-1（香港中度城市峡谷，33.7 GB）  
-> 工具：del1RTK SPP + gnss_comm + ROS1 Noetic
+> 数据集：UrbanNav-HK-Medium-Urban-1（香港中度城市峡谷）  
+> 工具：del1RTK SPP + gnss_comm + ROS1 Noetic  
+> 所有命令可直接复制粘贴
 
 ---
 
-## 准备：文件放在哪里
+## 前提：你已经下载好了
 
-在宿主机上建好目录：
+- `UrbanNav-HK-Medium-Urban-1.ublox.f9p.obs`（来自 GNSS 下载项）
+- 星历文件（来自香港政府 CORS 或 IGS，后缀 `.nav` 或 `.rnx`）
+- Ground Truth 文件（来自 Ground Truth 下载项）
+- ROS bag（33.7 GB，后台下载中或已完成）
+
+---
+
+## 第一步：宿主机建立目录，放好文件
 
 ```bash
 mkdir -p ~/datasets/urbannav/medium-urban-1/gnss
@@ -15,23 +23,28 @@ mkdir -p ~/datasets/urbannav/medium-urban-1/ground_truth
 mkdir -p ~/datasets/urbannav/medium-urban-1/bag
 ```
 
-把下载好的文件放进去：
-- RINEX obs/nav 文件 → `gnss/`
-- Ground Truth 文件 → `ground_truth/`
-- ROS bag → `bag/`
+把文件手动移动到对应目录：
+- obs 文件 + nav/rnx 文件 → `gnss/`
+- ground truth 文件 → `ground_truth/`
+- bag 文件（下完后）→ `bag/`
 
 ---
 
-## 第一步：把 RINEX 文件复制进 Docker
+## 第二步：把 GNSS 文件复制进 Docker
 
 ```bash
-# 在宿主机终端运行（把文件名换成你实际下载的）
-sudo docker cp ~/datasets/urbannav/medium-urban-1/gnss/ ros1_gnss:/root/urbannav_gnss/
+sudo docker cp ~/datasets/urbannav/medium-urban-1/gnss ros1_gnss:/root/urbannav_gnss
+```
+
+确认复制成功：
+
+```bash
+sudo docker exec ros1_gnss ls /root/urbannav_gnss/
 ```
 
 ---
 
-## 第二步：进入 Docker，安装依赖，下载转换脚本
+## 第三步：进入 Docker，下载转换脚本
 
 ```bash
 sudo docker exec -it ros1_gnss bash
@@ -40,44 +53,51 @@ sudo docker exec -it ros1_gnss bash
 进入容器后：
 
 ```bash
-pip install georinex pandas
-
 curl -L "https://github.com/phyllis-TANG/gnss_ws/raw/claude/review-gnss-spp-JmtgD/scripts/rinex_to_rosbag.py" \
      -o /root/rinex_to_rosbag.py
 ```
 
 ---
 
-## 第三步：查看 RINEX 文件名，运行转换
-
-```bash
-ls /root/urbannav_gnss/
-```
-
-把 obs 文件和 nav 文件路径填入下面命令：
+## 第四步：运行转换（把文件名换成你的实际文件名）
 
 ```bash
 python3 /root/rinex_to_rosbag.py \
-  --obs /root/urbannav_gnss/<obs文件名> \
-  --nav /root/urbannav_gnss/<nav文件名> \
+  --obs /root/urbannav_gnss/UrbanNav-HK-Medium-Urban-1.ublox.f9p.obs \
+  --nav /root/urbannav_gnss/<你的nav文件名> \
   --out /root/gnss_urbannav.bag \
   --lat 22.3 --lon 114.2 --alt 50
 ```
 
-看到 `完成！` 和测量历元数后继续。
+> `--lat/--lon/--alt` 是香港的大致坐标，不需要精确，仅用于卫星仰角计算。
+
+看到以下输出表示成功：
+
+```
+[1/3] 解析 obs: ...   找到 XXX 个历元
+[2/3] 解析 nav: ...   找到 XXX 条星历
+[3/3] 写入 bag: ...
+完成！输出: /root/gnss_urbannav.bag
+```
 
 ---
 
-## 第四步：跑 SPP（需要 3 个终端）
+## 第五步：跑 SPP（需要 3 个终端）
 
-**终端 1 — roscore：**
+### 终端 1 — 启动 roscore
+
 ```bash
 sudo docker exec -it ros1_gnss bash
 source /root/gnss_ws/devel/setup.bash
 roscore
 ```
 
-**终端 2 — 记录轨迹：**
+看到 `started core service [/rosout]` 后不动。
+
+---
+
+### 终端 2 — 开始记录轨迹
+
 ```bash
 sudo docker exec -it ros1_gnss bash
 source /root/gnss_ws/devel/setup.bash
@@ -88,10 +108,16 @@ curl -L "https://github.com/phyllis-TANG/gnss_ws/raw/claude/review-gnss-spp-Jmtg
 python3 /root/save_trajectory.py
 ```
 
-**终端 3 — 运行 SPP：**
+看到 `记录中` 后不动。
+
+---
+
+### 终端 3 — 运行 SPP
+
 ```bash
 sudo docker exec -it ros1_gnss bash
 source /root/gnss_ws/devel/setup.bash
+
 roslaunch del1RTK eval_spp.launch \
   bag:=/root/gnss_urbannav.bag \
   bag_rate:=1 \
@@ -99,14 +125,15 @@ roslaunch del1RTK eval_spp.launch \
   rviz:=false
 ```
 
-等终端 3 播完（显示 `Done.`），回到终端 2 按 `Ctrl+C`。
+等待 bag 播完（显示 `Done.`），回到**终端 2** 按 `Ctrl+C`。
 
 ---
 
-## 第五步：生成分析报告
+## 第六步：生成分析报告
+
+在容器里（任意终端）：
 
 ```bash
-# 在容器里
 curl -L "https://github.com/phyllis-TANG/gnss_ws/raw/claude/review-gnss-spp-JmtgD/scripts/generate_analysis.py" \
      -o /root/generate_analysis.py
 
@@ -120,16 +147,20 @@ python3 /root/generate_analysis.py
 sudo docker cp ros1_gnss:/root/spp_analysis.html ~/spp_analysis_urbannav.html
 ```
 
-浏览器打开：`file:///home/ubuntu22/spp_analysis_urbannav.html`
+浏览器打开：
+
+```
+file:///home/ubuntu22/spp_analysis_urbannav.html
+```
 
 ---
 
 ## 常见问题
 
-| 问题 | 解决 |
-|------|------|
-| `georinex` 安装失败 | `pip install georinex --index-url https://pypi.org/simple/` |
-| obs 文件里没有 C1C | 改用 `--obs` 文件名里带 `_MO` 的那个 |
-| 测量历元数为 0 | 检查 obs 文件是否是 RINEX 3.02 格式（文件头第一行） |
-| del1RTK 没有输出 | 先试 `exclude_glonass:=true`，排除 GLONASS 干扰 |
-| bag 找不到 | 检查路径，用 `ls -lh /root/gnss_urbannav.bag` 确认 |
+| 现象 | 解决方法 |
+|------|---------|
+| 历元数为 0 | obs 文件头部格式不对，发给助手确认 |
+| 星历数为 0 | nav 文件路径或格式有误，确认后缀是 `.nav`/`.rnx` |
+| del1RTK 没有定位输出 | 先加 `exclude_glonass:=true` 再试 |
+| 轨迹点数很少（< 50） | 正常，Urban Canyon 卫星少；或 obs 时段较短 |
+| HTML 地图底图不显示 | 正常（OSM 国内受限），轨迹线仍可见 |

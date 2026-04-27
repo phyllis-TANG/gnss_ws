@@ -154,20 +154,28 @@ def parse_nav(filepath):
 
         if sys_char in ('G','E','C') and len(brd) >= 28:
             week_toc, tow_toc = unix_to_gps(toc_unix)
-            toe_tow = brd[9]   # toe tow from RINEX
+            # RINEX nav brd 索引（每行4个字段，7行共28个）：
+            # ORBIT1: [0]=IODE [1]=Crs  [2]=Delta_n [3]=M0
+            # ORBIT2: [4]=Cuc  [5]=e    [6]=Cus     [7]=sqrtA
+            # ORBIT3: [8]=Toe  [9]=Cic  [10]=Omega0 [11]=Cis
+            # ORBIT4: [12]=i0  [13]=Crc [14]=omega  [15]=Omega_dot
+            # ORBIT5: [16]=i_dot [17]=CodesL2 [18]=GPS_week [19]=L2Pflag
+            # ORBIT6: [20]=SV_acc [21]=health [22]=TGD [23]=IODC
+            # ORBIT7: [24]=TransmitTime ...
+            toe_tow = brd[8]
             ephems.append(dict(
                 sys=sys_char, prn=prn,
                 toc_unix=toc_unix, toc_week=week_toc, toc_tow=tow_toc,
                 toe_week=week_toc, toe_tow=toe_tow,
                 af0=af0, af1=af1, af2=af2,
-                iode=int(brd[1]),  crs=brd[2],   delta_n=brd[3],  M0=brd[4],
-                cuc=brd[5],   e=brd[6],     cus=brd[7],   sqrtA=brd[8],
-                cic=brd[10],  OMG0=brd[11], cis=brd[12],  i0=brd[13],
-                crc=brd[14],  omg=brd[15],  OMG_dot=brd[16], i_dot=brd[17],
-                week=int(brd[19]) if len(brd)>19 else week_toc,
+                iode=int(brd[0]),  crs=brd[1],   delta_n=brd[2],  M0=brd[3],
+                cuc=brd[4],   e=brd[5],     cus=brd[6],   sqrtA=brd[7],
+                cic=brd[9],   OMG0=brd[10], cis=brd[11],  i0=brd[12],
+                crc=brd[13],  omg=brd[14],  OMG_dot=brd[15], i_dot=brd[16],
+                week=int(brd[18]) if len(brd)>18 else week_toc,
                 health=int(brd[21]) if len(brd)>21 else 0,
-                tgd0=brd[25] if len(brd)>25 else 0.0,
-                iodc=int(brd[26]) if len(brd)>26 else 0,
+                tgd0=brd[22] if len(brd)>22 else 0.0,
+                iodc=int(brd[23]) if len(brd)>23 else 0,
             ))
         elif sys_char == 'R' and len(brd) >= 12:
             week_toc, tow_toc = unix_to_gps(toc_unix)

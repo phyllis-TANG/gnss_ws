@@ -197,12 +197,6 @@ def main():
     from rosbags.rosbag1 import Writer
     from rosbags.typesys import get_typestore, get_types_from_msg, Stores
 
-    # 兼容不同版本 rosbags 的序列化 API
-    if hasattr(ts, 'serialize_cdr'):
-        def _ser(ts, msg, typename): return ts.serialize_cdr(msg, typename)
-    else:
-        def _ser(ts, msg, typename): return ts.serialize(msg, typename)
-
     # ── typestore ──────────────────────────────────────────────────────────────
     for p in ['/root/gnss_ws/src/gnss_comm/msg',
               '/root/gnss_ws/devel/share/gnss_comm/msg',
@@ -222,6 +216,12 @@ def main():
 
     ts = get_typestore(Stores.ROS1_NOETIC)
     ts.register(add_types)
+
+    # 兼容不同版本 rosbags 的序列化 API（ts 创建后再检测）
+    if hasattr(ts, 'serialize_cdr'):
+        def _ser(ts, msg, typename): return ts.serialize_cdr(msg, typename)
+    else:
+        def _ser(ts, msg, typename): return ts.serialize(msg, typename)
     T = ts.types
 
     GnssMeasMsg     = T['gnss_comm/msg/GnssMeasMsg']

@@ -197,6 +197,17 @@ def main():
     from rosbags.rosbag1 import Writer
     from rosbags.typesys import get_typestore, get_types_from_msg, Stores
 
+    # 兼容不同版本 rosbags 的序列化 API
+    try:
+        from rosbags.serde import serialize_cdr
+        def _ser(ts, msg, typename): return serialize_cdr(msg, typename)
+    except ImportError:
+        try:
+            from rosbags.typesys import serialize_cdr
+            def _ser(ts, msg, typename): return serialize_cdr(msg, typename)
+        except ImportError:
+            def _ser(ts, msg, typename): return _ser(ts,msg, typename)
+
     # ── typestore ──────────────────────────────────────────────────────────────
     for p in ['/root/gnss_ws/src/gnss_comm/msg',
               '/root/gnss_ws/devel/share/gnss_comm/msg',
@@ -296,7 +307,7 @@ def main():
                     gamma=np.float64(ep.get('gamma', 0)),
                     delta_tau_n=np.float64(0))
                 writer.write(c_glo, ros_ts,
-                    ts.serialize(msg, 'gnss_comm/msg/GnssGloEphemMsg'))
+                    _ser(ts,msg, 'gnss_comm/msg/GnssGloEphemMsg'))
             else:
                 sqrtA = ep['sqrtA']
                 A     = sqrtA * sqrtA   # 半长轴 A = sqrtA^2
@@ -334,7 +345,7 @@ def main():
                     A_dot=np.float64(0),
                     n_dot=np.float64(0))
                 writer.write(c_gps, ros_ts,
-                    ts.serialize(msg, 'gnss_comm/msg/GnssEphemMsg'))
+                    _ser(ts,msg, 'gnss_comm/msg/GnssEphemMsg'))
 
         # 写测量值
         for idx, (t, sv_data) in enumerate(epochs):
@@ -380,7 +391,7 @@ def main():
 
             msg = GnssMeasMsg(meas=obs_list)
             writer.write(c_meas, ros_ts,
-                ts.serialize(msg, 'gnss_comm/msg/GnssMeasMsg'))
+                _ser(ts,msg, 'gnss_comm/msg/GnssMeasMsg'))
 
             fix = NavSatFix(header=hdr,
                 latitude=np.float64(args.lat), longitude=np.float64(args.lon),
@@ -388,7 +399,7 @@ def main():
                 position_covariance=np.zeros(9, dtype=np.float64),
                 position_covariance_type=np.uint8(0))
             writer.write(c_lla, ros_ts,
-                ts.serialize(fix, 'sensor_msgs/msg/NavSatFix'))
+                _ser(ts,fix, 'sensor_msgs/msg/NavSatFix'))
             n_meas += 1
 
             if (idx+1) % 50 == 0 or idx == len(epochs)-1:

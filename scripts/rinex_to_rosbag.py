@@ -198,15 +198,10 @@ def main():
     from rosbags.typesys import get_typestore, get_types_from_msg, Stores
 
     # 兼容不同版本 rosbags 的序列化 API
-    try:
-        from rosbags.serde import serialize_cdr
-        def _ser(ts, msg, typename): return serialize_cdr(msg, typename)
-    except ImportError:
-        try:
-            from rosbags.typesys import serialize_cdr
-            def _ser(ts, msg, typename): return serialize_cdr(msg, typename)
-        except ImportError:
-            def _ser(ts, msg, typename): return _ser(ts,msg, typename)
+    if hasattr(ts, 'serialize_cdr'):
+        def _ser(ts, msg, typename): return ts.serialize_cdr(msg, typename)
+    else:
+        def _ser(ts, msg, typename): return ts.serialize(msg, typename)
 
     # ── typestore ──────────────────────────────────────────────────────────────
     for p in ['/root/gnss_ws/src/gnss_comm/msg',

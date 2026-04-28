@@ -146,11 +146,12 @@ def parse_nav(filepath):
 
         brd = []
         n_lines = 3 if sys_char == 'R' else 7
+        orbit_cols = (4, 23, 42, 61) if version >= 3 else (3, 22, 41, 60)
         for _ in range(n_lines):
             i += 1
             if i >= len(lines): break
             l = lines[i]
-            for col in (4,23,42,61): brd.append(rv(l, col))
+            for col in orbit_cols: brd.append(rv(l, col))
 
         if sys_char in ('G','E','C') and len(brd) >= 28:
             week_toc, tow_toc = unix_to_gps(toc_unix)

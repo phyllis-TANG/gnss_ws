@@ -66,14 +66,37 @@ if args.gt and os.path.exists(args.gt):
                     break
                 except ValueError:
                     skip = i + 1
+        # 自动检测坐标格式：
+        # 格式A（十进制度）: UTCTime Week GPSTime Lat Lon H-Ell ...  (parts[3]=lat float)
+        # 格式B（度分秒）:   UTCTime Week GPSTime D M S D M S H-Ell (parts[3..8]=DMS)
+        def parse_dms(d, m, s):
+            return float(d) + float(m)/60.0 + float(s)/3600.0
+
+        dms_format = None  # None=未知, True=DMS, False=十进制
         for line in lines[skip:]:
             parts = line.split()
             if len(parts) < 5:
                 continue
             try:
                 utc_t = float(parts[0])
-                lat   = float(parts[3])
-                lon   = float(parts[4])
+                # 检测格式：如果 parts[3] 是小整数（度数如22）且 parts[4] 也是小整数（分如18），判定为DMS
+                if dms_format is None:
+                    p3, p4 = float(parts[3]), float(parts[4])
+                    # DMS: parts[3]∈[0,180], parts[4]∈[0,60], parts[5]∈[0,60]
+                    # 十进制: parts[3]∈[-90,90] 通常带小数
+                    if (p3 == int(p3) and p4 == int(p4) and 0 <= p4 < 60
+                            and len(parts) >= 10):
+                        dms_format = True
+                    else:
+                        dms_format = False
+                if dms_format:
+                    if len(parts) < 10:
+                        continue
+                    lat = parse_dms(parts[3], parts[4], parts[5])
+                    lon = parse_dms(parts[6], parts[7], parts[8])
+                else:
+                    lat = float(parts[3])
+                    lon = float(parts[4])
                 gt_times.append(utc_t)
                 gt_pts.append([lat, lon])
             except (ValueError, IndexError):

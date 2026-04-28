@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ubx_parser</name>
+  <version>0.1.0</version>
+  <description>
+    UBX protocol parser and .ubx file replay node for u-blox GNSS receivers.
+    Provides offline parsing of u-blox binary logs, ROS 2 replay of recorded
+    sessions, and an offline tool to export NAV-PVT records to CSV.
+  </description>
+  <maintainer email="1111phyllis1111@gmail.com">phyllis-TANG</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

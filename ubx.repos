@@ -1,0 +1,10 @@
+# Pull external dependencies into src/ with:
+#   vcs import src < ubx.repos
+#
+# This file lists the upstream u-blox driver. We don't vendor the source
+# directly so that updates can be tracked via vcstool.
+repositories:
+  ublox:
+    type: git
+    url: https://github.com/KumarRobotics/ublox.git
+    version: ros2

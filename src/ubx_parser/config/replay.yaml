@@ -1,0 +1,10 @@
+ubx_replay_node:
+  ros__parameters:
+    # Override on the command line, e.g.:
+    #   ros2 launch ubx_parser replay.launch.py ubx_file:=/abs/path/to/file.ubx
+    ubx_file: ""
+    frame_id: "gps"
+    rate: 1.0          # 1.0 = real-time, 2.0 = 2x speed, 0.0 = as-fast-as-possible
+    loop: false
+    fix_topic: "fix"
+    vel_topic: "vel"

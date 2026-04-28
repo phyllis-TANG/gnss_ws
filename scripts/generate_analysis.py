@@ -251,7 +251,7 @@ canvas{{max-height:240px}}
 </div>
 
 <script>
-const D={DATA_PLACEHOLDER};
+const D={{DATA_PLACEHOLDER}};
 const map=L.map('map').setView([{clat},{clon}],16);
 L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={{x}}&y={{y}}&z={{z}}',{{maxZoom:21,attribution:'Google'}}).addTo(map);
 const sppL=L.polyline(D.spp,{{color:'#3b82f6',weight:2.5,opacity:.85,dashArray:'6,4'}}).addTo(map);

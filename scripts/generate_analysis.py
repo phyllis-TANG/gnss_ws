@@ -273,7 +273,7 @@ const cDef={{responsive:true,plugins:{{legend:{{labels:{{color:'#6b7a99',font:{{
 new Chart(document.getElementById('errChart'),{{type:'line',data:{{
   labels:D.err.map(e=>e.t),
   datasets:[{{label:'{metric_label} (m)',data:D.err.map(e=>Math.min(e.d,500)),borderColor:'#3b82f6',borderWidth:1.5,pointRadius:0,fill:{{target:'origin',above:'#3b82f620'}}}}]
-}},options:{{...cDef,scales:{{x:{{...cDef.scales.x,title:{{display:true,text:'点序号',color:'#6b7a99'}}}},y:{{...cDef.scales.y,title:{{display:true,text:'偏差 (m，上限500)',color:'#6b7a99'}}}}}}}}}}}});
+}},options:{{...cDef,scales:{{x:{{...cDef.scales.x,title:{{display:true,text:'点序号',color:'#6b7a99'}}}},y:{{...cDef.scales.y,title:{{display:true,text:'偏差 (m，上限500)',color:'#6b7a99'}}}}}}}}}});
 </script></body></html>"""
 
 html = html.replace('{DATA_PLACEHOLDER}', DATA)

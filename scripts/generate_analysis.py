@@ -196,9 +196,9 @@ html = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GNSS SPP Performance Analysis</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 :root{{--bg:#0a0e17;--surface:#131927;--border:#1e2940;--text:#e0e6f0;--dim:#6b7a99;--accent:#3b82f6;--green:#10b981;--orange:#f59e0b;--red:#ef4444}}
@@ -253,7 +253,7 @@ canvas{{max-height:240px}}
 <script>
 const D={{DATA_PLACEHOLDER}};
 const map=L.map('map').setView([{clat},{clon}],16);
-L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={{x}}&y={{y}}&z={{z}}',{{maxZoom:21,attribution:'Google'}}).addTo(map);
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OpenStreetMap'}}).addTo(map);
 const sppL=L.polyline(D.spp,{{color:'#3b82f6',weight:2.5,opacity:.85,dashArray:'6,4'}}).addTo(map);
 const layers={{'SPP (蓝虚线)':sppL}};
 if(D.ref&&D.ref.length>0){{

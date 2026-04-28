@@ -45,6 +45,7 @@ python3 /root/rinex_to_rosbag.py \
 - 必须用 `import rosbag`（原生ROS1），不能用 `pip install rosbags`（CDR格式不兼容）
 - RINEX nav `brd[]` 索引：`[0]`=IODE, `[1]`=Crs, `[2]`=Δn, `[3]`=M0, `[4]`=Cuc, `[5]`=e, `[6]`=Cus, `[7]`=sqrtA, `[8]`=Toe, `[9]`=Cic, `[10]`=Ω0, `[11]`=Cis, `[12]`=i0, `[13]`=Crc, `[14]`=ω, `[15]`=Ω̇, `[16]`=i̇, `[18]`=GPS_week, `[21]`=health, `[22]`=TGD, `[23]`=IODC
 - 星历时间戳写在第一个观测历元前1秒（否则 bag 时长会变成187天）
+- **闰秒 Bug（已修复，commit b2022f8）**：RINEX 3 obs/nav 历元时间是 GPS 时间，但 `epoch_to_unix` 按 UTC 处理，再经 `unix_to_gps` 又加 18 秒，导致 bag 里 GPS TOW 比实际多 18s。卫星 toe 直接从 brd[8] 读取（正确），使得 del1RTK 计算 (t_obs - toe) 时多传播 18s（~70km 卫星位置偏差）→ SPP 偏 ~16km。修复：在 parse_obs 和 parse_nav 中各减 LEAP_SECONDS。
 
 ### `save_trajectory.py`
 记录 SPP 定位结果到 CSV（含时间戳）
@@ -113,7 +114,13 @@ roslaunch del1RTK eval_spp.launch \
 - 2021年闰秒 = 18秒
 - GPS time = Unix time − 315964800 + 18
 
+## SPP 基准结果（UrbanNav Medium-Urban-1，2021-05-17，香港）
+- 轨迹点数: 635（SPP），GT 787 点，时间匹配 621/635
+- **SPP–GT 均值: 84.8 m，RMS: 103.8 m，95th: 176.1 m**
+- 符合香港城市峡谷 GNSS-only SPP 预期（50–200m）
+
 ## 待完成
-- [ ] 下载 UrbanNav GT 文件并运行 `generate_analysis.py --gt`
-- [ ] 分析 SPP 误差分布（Urban Canyon 多径/NLOS）
+- [x] 跑通 SPP + GT 对比，误差 <200m ✓
+- [ ] 分析 SPP 误差分布（Urban Canyon 多径/NLOS 成分）
+- [ ] 下载 del2AINLOS 所需基站 obs（同时段香港 CORS），运行 NLOS 分类
 - [ ] 结合 LiDAR 点云做 NLOS 建模

@@ -81,7 +81,9 @@ def parse_obs(filepath):
         except Exception:
             i += 1; continue
 
-        t = epoch_to_unix(year, month, day, hour, minute, sec)
+        # RINEX 3 obs 历元时间在 GPS 时间系下（见 "TIME OF FIRST OBS ... GPS"），
+        # 需减去闰秒得到真实 Unix(UTC)，否则后续 unix_to_gps 会再加 18s 导致 TOW 偏 +18s
+        t = epoch_to_unix(year, month, day, hour, minute, sec) - LEAP_SECONDS
         sv_data = {}
         for _ in range(n_sv):
             i += 1
@@ -142,7 +144,8 @@ def parse_nav(filepath):
 
         if sys_char not in ('G','E','C','R'): i += 8; continue
 
-        toc_unix = epoch_to_unix(year, month, day, hour, minute, sec)
+        # nav toc 也是 GPS 时间，同样减去闰秒
+        toc_unix = epoch_to_unix(year, month, day, hour, minute, sec) - LEAP_SECONDS
 
         brd = []
         n_lines = 3 if sys_char == 'R' else 7

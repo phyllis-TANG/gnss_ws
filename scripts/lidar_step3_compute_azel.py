@@ -26,9 +26,15 @@ import numpy as np
 # 复用 del2AINLOS 中的 rinex_utils
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RINEX_UTILS = os.path.join(SCRIPT_DIR,
+    '../src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS/scripts')
+# 备用路径（兼容不同目录结构）
+_RINEX_UTILS_ALT = os.path.join(SCRIPT_DIR,
     '../PSRI-73-2309-PR-Dev/rospak/src/del2AINLOS/scripts')
-if RINEX_UTILS not in sys.path:
-    sys.path.insert(0, RINEX_UTILS)
+for _p in [RINEX_UTILS, _RINEX_UTILS_ALT,
+           '/root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS/scripts',
+           '/root/gnss_ws/devel/lib/del2AINLOS']:
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from rinex_utils import (
     read_rinex_obs, read_rinex_nav,

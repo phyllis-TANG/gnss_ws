@@ -283,7 +283,8 @@ for ep_i, epoch in enumerate(obs_epochs):
             continue
 
         # 卫星钟差修正后的伪距 [4]
-        psr_clk = psr_raw - C_LIGHT * dt_sv
+        # ρ = r + c(δt_rx − δt_sv)  →  ρ_corr = ρ + c·δt_sv  (Kaplan & Hegarty 2006, p.183)
+        psr_clk = psr_raw + C_LIGHT * dt_sv
 
         # 信号传播时间 → Sagnac 修正 [4]
         travel_t   = psr_raw / C_LIGHT

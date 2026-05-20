@@ -171,53 +171,39 @@ with open(args.refl) as f:
 print(f'  {len(refl_dict)} 条')
 
 # ── 加载地面真值 ───────────────────────────────────────────────────────
+# 文件格式（UrbanNav GT）：空格分隔，前两行为表头
+# 列：UTCTime(unix秒) Week GPSTime Lat_D Lat_M Lat_S Lon_D Lon_M Lon_S H-Ell ...
+# 示例：1621218775.00 2158.00000 95593.00  22 18 04.31949  114 10 44.60559  3.472 ...
 print(f'加载地面真值: {args.gt}')
 gt_times, gt_lats, gt_lons, gt_alts = [], [], [], []
 
-def parse_utctime(s):
-    """解析 '2021/05/17 02:33:40.000' 或 'HH:MM:SS.sss' → unix 时间戳"""
-    s = s.strip()
-    for fmt in ('%Y/%m/%d %H:%M:%S.%f', '%Y/%m/%d %H:%M:%S',
-                '%H:%M:%S.%f', '%H:%M:%S'):
-        try:
-            dt = datetime.datetime.strptime(s, fmt)
-            if dt.year == 1900:   # 只有时间无日期，补充日期
-                dt = dt.replace(year=2021, month=5, day=17)
-            return dt.replace(tzinfo=datetime.timezone.utc).timestamp()
-        except ValueError:
-            continue
-    return None
+def dms_to_deg(d, m, s):
+    return float(d) + float(m) / 60.0 + float(s) / 3600.0
 
 with open(args.gt) as f:
     lines = f.readlines()
 
-header_skipped = 0
 for line in lines:
     line = line.strip()
-    if not line or line.startswith('%') or line.startswith('#'):
-        header_skipped += 1
-        continue
+    if not line or line.startswith('UTC') or line.startswith('('):
+        continue          # 跳过两行文字表头
     parts = line.split()
-    if len(parts) < 5:
+    if len(parts) < 10:
         continue
-    # 尝试解析：列格式 UTCTime(可能有空格) Week GPSTime Lat Lon Alt ...
-    # UTCTime 可能占 1 列（无空格）或 2 列（日期+时间）
     try:
-        if '/' in parts[0] and len(parts) >= 7:    # 'YYYY/MM/DD HH:MM:SS ...'
-            utc_str  = parts[0] + ' ' + parts[1]
-            lat, lon, alt = float(parts[4]), float(parts[5]), float(parts[6])
-        elif ':' in parts[0]:                        # 'HH:MM:SS ...'
-            utc_str  = parts[0]
-            lat, lon, alt = float(parts[3]), float(parts[4]), float(parts[5])
-        else:
+        utc_t = float(parts[0])    # Unix 时间戳（秒）
+        lat   = dms_to_deg(parts[3], parts[4], parts[5])
+        lon   = dms_to_deg(parts[6], parts[7], parts[8])
+        alt   = float(parts[9])
+        if utc_t < 1e9:            # 不合理的时间戳（表头残留）
             continue
-        t = parse_utctime(utc_str)
-        if t is None:
-            continue
-        gt_times.append(t)
+        gt_times.append(utc_t)
         gt_lats.append(lat)
         gt_lons.append(lon)
         gt_alts.append(alt)
+        t = utc_t   # 占位，保持后续代码结构一致
+        if t is None:
+            continue
     except (ValueError, IndexError):
         continue
 

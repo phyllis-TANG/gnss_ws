@@ -40,7 +40,7 @@ with rosbag.Bag(args.bag, 'r') as bag:
         heading = msg.azimuth   # 度（NovAtel 用 azimuth 表示航向）
 
         # 解算状态（SOLUTION_GOOD=3 才可靠）
-        ins_status = msg.ins_status.status
+        ins_status = msg.ins_status if isinstance(msg.ins_status, int) else msg.ins_status.status
 
         rows.append([
             f'{unix_t:.3f}', lat, lon, alt,

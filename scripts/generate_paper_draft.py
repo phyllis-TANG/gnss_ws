@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 generate_paper_draft.py
-生成论文草稿 Word 文档（python-docx）
-运行：python3 generate_paper_draft.py --out paper_draft.docx
+Generate paper draft Word document (python-docx)
+Run: python3 generate_paper_draft.py --out paper_draft.docx
 """
 import argparse
 from docx import Document
@@ -19,7 +19,7 @@ args = ap.parse_args()
 
 doc = Document()
 
-# ── 页面设置 ──────────────────────────────────────────────────────────
+# ── Page setup ───────────────────────────────────────────────────────
 section = doc.sections[0]
 section.page_width  = Cm(21.0)
 section.page_height = Cm(29.7)
@@ -28,7 +28,7 @@ section.right_margin  = Cm(2.5)
 section.top_margin    = Cm(2.5)
 section.bottom_margin = Cm(2.5)
 
-# ── 样式工具 ──────────────────────────────────────────────────────────
+# ── Style helpers ────────────────────────────────────────────────────
 def set_font(run, name='Times New Roman', size=11, bold=False, italic=False, color=None):
     run.font.name = name
     run.font.size = Pt(size)
@@ -56,11 +56,11 @@ def body(text, indent=0, italic=False, size=11, space_after=6):
     return p
 
 def note(text):
-    """灰色注释段落"""
+    """Grey draft annotation paragraph."""
     p = doc.add_paragraph()
     p.paragraph_format.left_indent  = Cm(1.0)
     p.paragraph_format.space_after  = Pt(4)
-    run = p.add_run('【草稿注】' + text)
+    run = p.add_run('[DRAFT NOTE] ' + text)
     set_font(run, size=9.5, italic=True, color=(120, 120, 120))
     return p
 
@@ -73,21 +73,21 @@ def add_table(headers, rows, caption=''):
     tbl = doc.add_table(rows=1+len(rows), cols=len(headers))
     tbl.style = 'Table Grid'
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    # 表头
+    # Header row
     for i, h in enumerate(headers):
         cell = tbl.rows[0].cells[i]
         cell.paragraphs[0].clear()
         run = cell.paragraphs[0].add_run(h)
         set_font(run, size=10, bold=True)
         cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        # 表头背景色
+        # Header background colour
         tc = cell._tc
         tcPr = tc.get_or_add_tcPr()
         shd = OxmlElement('w:shd')
         shd.set(qn('w:fill'), 'D6E4F0')
         shd.set(qn('w:val'), 'clear')
         tcPr.append(shd)
-    # 数据行
+    # Data rows
     for ri, row in enumerate(rows):
         for ci, val in enumerate(row):
             cell = tbl.rows[ri+1].cells[ci]
@@ -106,7 +106,7 @@ def divider():
         set_font(run, size=8, color=(180,180,180))
 
 # ══════════════════════════════════════════════════════════════════════
-# 标题页
+# Title page
 # ══════════════════════════════════════════════════════════════════════
 p_title = doc.add_paragraph()
 p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -122,7 +122,7 @@ p_sub = doc.add_paragraph()
 p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
 p_sub.paragraph_format.space_after = Pt(6)
 r2 = p_sub.add_run(
-    '面向城市峡谷的 LiDAR 辅助 GNSS NLOS 几何建模\n与伪距修正评估（Draft v0.1）')
+    'LiDAR-Aided GNSS NLOS Geometric Modeling and\nPseudorange Correction Evaluation in Urban Canyons  (Draft v0.1)')
 set_font(r2, size=12, italic=True, color=(80,80,80))
 
 p_author = doc.add_paragraph()
@@ -167,7 +167,7 @@ body(
     'establishing a measurable baseline for future work.'
 )
 
-note('关键词（5–7个）：GNSS NLOS, LiDAR point cloud, ray tracing, multipath, '
+note('Keywords (5–7): GNSS NLOS, LiDAR point cloud, ray tracing, multipath, '
      'SPP pseudorange correction, urban canyon, UrbanNav')
 
 doc.add_paragraph()
@@ -216,7 +216,7 @@ for i, c in enumerate([
 ], 1):
     body(f'({i+1}) {c}', indent=0.8)
 
-note('可在此段末尾加一句 "The remainder of this paper is organised as follows..."')
+note('Consider adding "The remainder of this paper is organised as follows..." at the end of this paragraph.')
 
 # ══════════════════════════════════════════════════════════════════════
 # 2. Related Work
@@ -446,7 +446,7 @@ body(
     'the instantaneous LiDAR field of view, causing false NLOS predictions '
     'for high-elevation satellites.'
 )
-note('[Fig. 3] 仰角分箱的 Precision/Recall/F1 柱状图 + 混淆矩阵热力图')
+note('[Fig. 3] Precision/Recall/F1 bar chart by elevation bin + confusion matrix heatmap (from lidar_nlos_comparison.html)')
 
 heading('5.2  Reflection Geometry and ΔL Distribution (Step 6)', level=2, size=11, bold=True, color=(40,80,140))
 body(
@@ -471,7 +471,7 @@ add_table(
     ],
     caption='Table 3. Multipath severity distribution from geometric ΔL estimates.'
 )
-note('[Fig. 4] ΔL vs 仰角散点图 + 严重程度甜甜圈图（来自 Step 6 HTML）')
+note('[Fig. 4] ΔL vs elevation scatter plot + severity donut chart (from lidar_reflection_model.html)')
 
 heading('5.3  SPP Correction Experiment (Step 7)', level=2, size=11, bold=True, color=(40,80,140))
 body(
@@ -494,8 +494,8 @@ body(
     'RMS +452 m). The CDF and time-series plots (Fig. 5–6) confirm these trends '
     'are consistent across the entire trajectory.'
 )
-note('[Fig. 5] 三模式水平误差 CDF（来自 Step 7 HTML）')
-note('[Fig. 6] 水平误差时间序列（来自 Step 7 HTML）')
+note('[Fig. 5] Horizontal error CDF for three modes (from spp_correction_report.html)')
+note('[Fig. 6] Horizontal error time series (from spp_correction_report.html)')
 
 heading('5.4  Root-Cause Analysis', level=2, size=11, bold=True, color=(40,80,140))
 body(
@@ -614,27 +614,27 @@ for ref in refs:
     set_font(run, size=9.5)
 
 # ══════════════════════════════════════════════════════════════════════
-# 附录：图表清单
+# Appendix: Figure and Table Checklist
 # ══════════════════════════════════════════════════════════════════════
 doc.add_page_break()
 heading('Appendix: Figure and Table Checklist', size=12)
-note('以下图表均已由流程脚本生成，可直接截图或导出矢量图插入正文。')
+note('All figures below are generated by pipeline scripts; screenshots or vector exports can be inserted directly into the paper.')
 add_table(
-    ['编号', '内容', '来源脚本/文件', '状态'],
+    ['ID', 'Content', 'Source script / file', 'Status'],
     [
-        ['Fig. 1', 'Pipeline 架构示意图',        '手绘/PowerPoint',               '待制作'],
-        ['Fig. 2', 'CloudCompare 地图截图',       'urbannav_map.ply',              '已有截图'],
-        ['Fig. 3', 'NLOS 检测分仰角性能',         'lidar_nlos_comparison.html',    '已生成'],
-        ['Fig. 4', 'ΔL 分布 + 严重程度图',        'lidar_reflection_model.html',   '已生成'],
-        ['Fig. 5', 'SPP 三模式误差 CDF',          'spp_correction_report.html',    '已生成'],
-        ['Fig. 6', 'SPP 误差时间序列',            'spp_correction_report.html',    '已生成'],
-        ['Table 1','数据集参数',                  '本文档',                        '已完成'],
-        ['Table 2','NLOS 混淆矩阵',               '本文档',                        '已完成'],
-        ['Table 3','ΔL 严重程度分布',             '本文档',                        '已完成'],
-        ['Table 4','SPP 误差统计对比',            '本文档',                        '已完成'],
+        ['Fig. 1', 'Pipeline architecture block diagram', 'Hand-drawn / PowerPoint',         'To be created'],
+        ['Fig. 2', 'CloudCompare LiDAR map screenshot',   'urbannav_map.ply',                'Screenshot available'],
+        ['Fig. 3', 'NLOS detection performance by elevation bin', 'lidar_nlos_comparison.html',    'Generated'],
+        ['Fig. 4', 'ΔL distribution + severity chart',   'lidar_reflection_model.html',      'Generated'],
+        ['Fig. 5', 'SPP three-mode horizontal error CDF', 'spp_correction_report.html',       'Generated'],
+        ['Fig. 6', 'SPP horizontal error time series',    'spp_correction_report.html',       'Generated'],
+        ['Table 1','Dataset parameters',                  'This document',                    'Complete'],
+        ['Table 2','NLOS detection confusion matrix',     'This document',                    'Complete'],
+        ['Table 3','ΔL severity distribution',            'This document',                    'Complete'],
+        ['Table 4','SPP error comparison',                'This document',                    'Complete'],
     ],
-    caption='Appendix Table. 图表清单与完成状态。'
+    caption='Appendix Table. Figure and table checklist with completion status.'
 )
 
 doc.save(args.out)
-print(f'已保存：{args.out}')
+print(f'Saved: {args.out}')

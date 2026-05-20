@@ -1,35 +1,36 @@
 #!/usr/bin/env python3
 """
 lidar_step3_multignss_azel.py
-Multi-GNSS (GPS + BeiDou + Galileo) per-epoch azimuth/elevation calculation.
+Multi-GNSS (GPS / BeiDou / Galileo) version of lidar_step3_compute_azel.py.
 
-For each RINEX 3 obs epoch, computes elevation and azimuth for every
-visible G/C/E satellite using the matching nav file for each constellation.
-Receiver position is taken from NovAtel INSPVAX trajectory (novatel_trajectory.csv).
+For every GNSS epoch, compute azimuth and elevation for all visible G/C/E
+satellites.  Receiver position comes from the NovAtel INSPVAX trajectory
+(novatel_trajectory.csv).
 
-Output: epoch_sat_azel_multignss.csv  (same columns as step3, sys field captures constellation)
+Output: epoch_sat_azel_multignss.csv  (same columns as the GPS-only version;
+        the 'sys' column captures the constellation).
 
-Usage (inside container):
-  python3 lidar_step3_multignss_azel.py \\
-    --obs     /root/urbannav_gnss/UrbanNav-HK-Medium-Urban-1.ublox.f9p.obs \\
-    --nav_gps /root/urbannav_gnss/hksc137c.21n \\
-    --nav_bds /root/urbannav_gnss/hksc137c.21f \\
-    --nav_gal /root/urbannav_gnss/hksc137c.21l \\
-    --traj    /root/novatel_trajectory.csv \\
-    --out     /root/epoch_sat_azel_multignss.csv \\
+Usage (in container):
+  python3 lidar_step3_multignss_azel.py \
+    --obs      /root/urbannav_gnss/UrbanNav-HK-Medium-Urban-1.ublox.f9p.obs \
+    --nav_gps  /root/urbannav_gnss/hksc137c.21n \
+    --nav_bds  /root/urbannav_gnss/hksc137c.21f \
+    --nav_gal  /root/urbannav_gnss/hksc137c.21l \
+    --traj     /root/novatel_trajectory.csv \
+    --out      /root/epoch_sat_azel_multignss.csv \
     --min_elev 5.0
 
-Time-handling note:
-  read_rinex_obs treats GPS epochs as UTC, so epoch.time_unix is 18 s ahead of true UTC.
-  compute_sat_position's unix_to_gpst has the same 18-s offset, so the two cancel out
-  and satellite positions are correct.  For matching the INSPVAX trajectory (true UTC)
-  we subtract LEAP_SECONDS=18 from epoch.time_unix.
+Timing note (unchanged from Step 3 GPS-only):
+  read_rinex_obs parses GPS epoch times as UTC, making epoch.time_unix 18 s
+  ahead of true UTC.  compute_sat_position has the matching offset, so
+  satellite positions are correct.  For matching the INSPVAX trajectory
+  (true UTC unix time) subtract LEAP_SECONDS=18.
 """
 
 import argparse, csv, math, sys, os
 import numpy as np
 
-# ── rinex_utils search path (same pattern as existing step3/step7) ────────────
+# ── rinex_utils search path ────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 for _p in [
     os.path.join(SCRIPT_DIR, '../src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS/scripts'),
@@ -48,70 +49,64 @@ from rinex_utils import (
 
 LEAP_SECONDS = 18  # GPS time − UTC (2021)
 
-# Pseudorange observation code priority per constellation
+# System-specific pseudorange priority keys
 PSR_KEYS = {
     'G': ['C1C', 'C1P', 'C1X', 'C2C', 'C2P'],
     'C': ['C1I', 'C1X', 'C1C', 'C2I', 'C7I'],
     'E': ['C1C', 'C1X', 'C1B', 'C5Q', 'C5X'],
 }
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# ── argument parsing ───────────────────────────────────────────────────────
 ap = argparse.ArgumentParser(
-    description='Multi-GNSS (G/C/E) azimuth & elevation computation')
+    description='Multi-GNSS az/el computation (G/C/E) for LiDAR NLOS pipeline')
 ap.add_argument('--obs',     default='/root/urbannav_gnss/UrbanNav-HK-Medium-Urban-1.ublox.f9p.obs')
-ap.add_argument('--nav_gps', default='/root/urbannav_gnss/hksc137c.21n',
-                help='GPS RINEX 2 nav file (.21n)')
-ap.add_argument('--nav_bds', default='/root/urbannav_gnss/hksc137c.21f',
-                help='BeiDou RINEX 2 nav file (.21f)')
-ap.add_argument('--nav_gal', default='/root/urbannav_gnss/hksc137c.21l',
-                help='Galileo RINEX 2 nav file (.21l)')
+ap.add_argument('--nav_gps', default='/root/urbannav_gnss/hksc137c.21n')
+ap.add_argument('--nav_bds', default='/root/urbannav_gnss/hksc137c.21f')
+ap.add_argument('--nav_gal', default='/root/urbannav_gnss/hksc137c.21l')
 ap.add_argument('--traj',    default='/root/novatel_trajectory.csv')
 ap.add_argument('--out',     default='/root/epoch_sat_azel_multignss.csv')
 ap.add_argument('--min_elev', type=float, default=5.0,
-                help='Elevation cut-off angle in degrees (default 5.0)')
+                help='Elevation cutoff in degrees (default 5 deg)')
 args = ap.parse_args()
 
 
-# ── Nav loading helper ────────────────────────────────────────────────────────
+# ── nav loading helper ─────────────────────────────────────────────────────
 def load_nav(path, sys_prefix):
     """
-    Load a RINEX nav file and remap all satellite keys to canonical format
-    '<sys_prefix><PRN:02d>' (e.g. 'G01', 'C03', 'E11').
+    Load a RINEX nav file and remap all satellite keys to the form
+    '<sys_prefix><nn>' (e.g. 'G01', 'C03', 'E12').
 
-    Key remapping rules:
-      - int key          → f'{sys_prefix}{key:02d}'
-      - string with wrong leading letter → replace first char with sys_prefix
-      - string already matching sys_prefix → keep as-is
+    Handles three key formats returned by read_rinex_nav:
+      - integer  : direct PRN -> '<prefix>{:02d}'
+      - string beginning with a letter but wrong prefix -> replace first char
+      - string already in correct format -> keep as-is
 
-    Returns a dict {sat_id: [ephem, ...]} or {} on failure.
+    Returns an empty dict if the file cannot be read.
     """
-    if not os.path.isfile(path):
-        print(f'  [warning] nav file not found, skipping: {path}')
-        return {}
     try:
         raw = read_rinex_nav(path)
     except Exception as exc:
-        print(f'  [warning] failed to read {path}: {exc}')
+        print(f'  [WARNING] Failed to read nav file {path}: {exc}')
         return {}
 
     remapped = {}
-    for key, val in raw.items():
+    for key, ephem_list in raw.items():
         if isinstance(key, int):
             new_key = f'{sys_prefix}{key:02d}'
-        elif isinstance(key, str):
-            if len(key) > 1 and key[0].isalpha() and key[0] != sys_prefix:
-                new_key = sys_prefix + key[1:]
-            else:
+        elif isinstance(key, str) and key and key[0].isalpha():
+            if key[0] == sys_prefix:
                 new_key = key
+            else:
+                new_key = sys_prefix + key[1:]
         else:
-            new_key = str(key)
-        remapped[new_key] = val
+            new_key = key
+        remapped[new_key] = ephem_list
 
     return remapped
 
 
-# ── Load trajectory ───────────────────────────────────────────────────────────
-print('Loading INSPVAX trajectory...')
+# ── load trajectory ────────────────────────────────────────────────────────
+print('读取 INSPVAX 轨迹...')
 traj = []
 with open(args.traj) as f:
     for row in csv.DictReader(f):
@@ -121,50 +116,50 @@ with open(args.traj) as f:
         ))
 traj.sort(key=lambda x: x[0])
 traj_times = np.array([r[0] for r in traj])
-print(f'  {len(traj)} poses, UTC {traj[0][0]:.1f} ~ {traj[-1][0]:.1f}')
+print(f'  {len(traj)} 个位姿，UTC {traj[0][0]:.1f} ~ {traj[-1][0]:.1f}')
 
 
 def get_rx_ecef(utc_t):
-    """Nearest-neighbour interpolation — returns (ecef, lat, lon, alt)."""
+    """Nearest-neighbour interpolation; returns (ecef, lat, lon, alt)."""
     idx = int(np.searchsorted(traj_times, utc_t))
     idx = min(max(idx, 0), len(traj) - 1)
     if idx > 0 and abs(traj_times[idx - 1] - utc_t) < abs(traj_times[idx] - utc_t):
         idx -= 1
     _, lat, lon, alt = traj[idx]
-    return llh_to_ecef(lat, lon, alt), lat, lon, alt
+    ecef = llh_to_ecef(lat, lon, alt)
+    return ecef, lat, lon, alt
 
 
-# ── Load nav files ────────────────────────────────────────────────────────────
-print('Loading navigation messages...')
-nav_gps = load_nav(args.nav_gps, 'G')
-nav_bds = load_nav(args.nav_bds, 'C')
-nav_gal = load_nav(args.nav_gal, 'E')
+# ── load nav files ─────────────────────────────────────────────────────────
+print('读取导航电文（GPS / BeiDou / Galileo）...')
+ephem_gps = load_nav(args.nav_gps, 'G')
+ephem_bds = load_nav(args.nav_bds, 'C')
+ephem_gal = load_nav(args.nav_gal, 'E')
 
 ephem_dict = {}
-ephem_dict.update(nav_gps)
-ephem_dict.update(nav_bds)
-ephem_dict.update(nav_gal)
+ephem_dict.update(ephem_gps)
+ephem_dict.update(ephem_bds)
+ephem_dict.update(ephem_gal)
 
 total_ephem = sum(len(v) for v in ephem_dict.values())
-print(f'  GPS:{len(nav_gps)} sats  BDS:{len(nav_bds)} sats  GAL:{len(nav_gal)} sats')
-print(f'  Total: {len(ephem_dict)} satellites, {total_ephem} ephemeris records')
+print(f'  GPS {len(ephem_gps)} 颗，BDS {len(ephem_bds)} 颗，'
+      f'GAL {len(ephem_gal)} 颗  共 {total_ephem} 条星历')
 
-# ── Load observations ─────────────────────────────────────────────────────────
-print('Loading observation file (may take a few seconds)...')
+# ── load observations ──────────────────────────────────────────────────────
+print('读取观测文件（可能需要数秒）...')
 obs_epochs = read_rinex_obs(args.obs)
-print(f'  {len(obs_epochs)} epochs')
+print(f'  {len(obs_epochs)} 个历元')
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
-print(f'\nComputing azimuth/elevation (min_elev={args.min_elev}°)...')
+# ── main loop ──────────────────────────────────────────────────────────────
+print(f'\n计算 azimuth / elevation（最小仰角 {args.min_elev}°，星座: G/C/E）...')
 
-rows = []
+rows          = []
 no_ephem_sats = set()
 traj_misses   = 0
-sys_counts    = {'G': 0, 'C': 0, 'E': 0}
 
 for ep_i, epoch in enumerate(obs_epochs):
-    rinex_unix_t = epoch.time_unix           # for sat position (offsets cancel)
-    utc_t        = rinex_unix_t - LEAP_SECONDS  # for trajectory matching
+    rinex_unix_t = epoch.time_unix
+    utc_t        = rinex_unix_t - LEAP_SECONDS
 
     if utc_t < traj_times[0] - 2.0 or utc_t > traj_times[-1] + 2.0:
         traj_misses += 1
@@ -177,32 +172,36 @@ for ep_i, epoch in enumerate(obs_epochs):
         sat_id   = obs.sat_id
         sys_char = obs.sys
 
-        # Only process GPS, BeiDou, Galileo
+        # Only process GPS, BeiDou and Galileo
         if sys_char not in ('G', 'C', 'E'):
             continue
 
+        # Find closest ephemeris
         eph_list = ephem_dict.get(sat_id, [])
         eph = find_closest_ephem(eph_list, rinex_unix_t)
         if eph is None:
             no_ephem_sats.add(sat_id)
             continue
 
+        # Satellite ECEF position
         sat_ecef, dt_sv = compute_sat_position(eph, rinex_unix_t)
         if sat_ecef is None:
             continue
 
+        # Elevation and azimuth
         elev, azim = elevation_azimuth(rx_ecef, sat_ecef)
         if elev < args.min_elev:
             continue
 
-        # Best pseudorange (constellation-specific priority)
+        # Best pseudorange (system-specific priority)
+        psr_priority = PSR_KEYS.get(sys_char, ['C1C', 'C1P', 'C1X', 'C2C', 'C2P'])
         psr = 0.0
-        for key in PSR_KEYS.get(sys_char, ['C1C', 'C1P', 'C1X']):
+        for key in psr_priority:
             if key in obs.pseudorange and obs.pseudorange[key] > 0:
                 psr = obs.pseudorange[key]
                 break
         if not psr and obs.pseudorange:
-            psr = next(iter(obs.pseudorange.values()))
+            psr = next((v for v in obs.pseudorange.values() if v > 0), 0.0)
 
         # Best CN0
         cn0 = 0.0
@@ -211,7 +210,7 @@ for ep_i, epoch in enumerate(obs_epochs):
                 cn0 = obs.cn0[key]
                 break
         if not cn0 and obs.cn0:
-            cn0 = next(iter(obs.cn0.values()))
+            cn0 = next((v for v in obs.cn0.values() if v > 0), 0.0)
 
         rows.append({
             'unix_t':        f'{rinex_unix_t:.3f}',
@@ -227,20 +226,19 @@ for ep_i, epoch in enumerate(obs_epochs):
             'rx_lon':        f'{rx_lon:.8f}',
             'rx_alt':        f'{rx_alt:.3f}',
         })
-        sys_counts[sys_char] = sys_counts.get(sys_char, 0) + 1
         sat_count += 1
 
     if (ep_i + 1) % 50 == 0:
-        print(f'\r  {ep_i+1}/{len(obs_epochs)} epochs, {len(rows)} records accumulated',
+        print(f'\r  {ep_i+1}/{len(obs_epochs)} 历元，已累积 {len(rows)} 条记录',
               end='', flush=True)
 
-print(f'\nDone: {len(rows)} (satellite×epoch) records')
+print(f'\n完成，共 {len(rows)} 条（卫星×历元）记录')
 if no_ephem_sats:
-    print(f'  Satellites with no ephemeris: {sorted(no_ephem_sats)}')
+    print(f'  无星历卫星：{sorted(no_ephem_sats)}')
 if traj_misses:
-    print(f'  Epochs outside INSPVAX time range: {traj_misses}')
+    print(f'  超出 INSPVAX 时间范围历元数：{traj_misses}')
 
-# ── Write CSV ─────────────────────────────────────────────────────────────────
+# ── write CSV ──────────────────────────────────────────────────────────────
 COLS = ['unix_t', 'utc_t', 'sat_id', 'sys', 'prn',
         'elevation_deg', 'azimuth_deg', 'pseudorange', 'cn0',
         'rx_lat', 'rx_lon', 'rx_alt']
@@ -250,24 +248,31 @@ with open(args.out, 'w', newline='') as f:
     w.writeheader()
     w.writerows(rows)
 
-print(f'Saved: {args.out}')
+print(f'已保存：{args.out}')
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
+# ── per-constellation statistics ───────────────────────────────────────────
 if rows:
     elevs  = [float(r['elevation_deg']) for r in rows]
     azims  = [float(r['azimuth_deg'])   for r in rows]
     sats   = set(r['sat_id'] for r in rows)
     epochs_with_data = set(r['unix_t'] for r in rows)
 
-    print(f'\n--- Statistics ---')
-    print(f'Epochs with data:  {len(epochs_with_data)}')
-    print(f'Unique satellites: {len(sats)}')
-    print(f'Elevation range:   {min(elevs):.1f}° ~ {max(elevs):.1f}°,  '
-          f'mean {np.mean(elevs):.1f}°')
-    print(f'Azimuth range:     {min(azims):.1f}° ~ {max(azims):.1f}°')
-    print(f'\nPer-constellation record counts:')
+    sys_cnt: dict = {}
+    for r in rows:
+        sys_cnt[r['sys']] = sys_cnt.get(r['sys'], 0) + 1
+
+    print(f'\n--- 统计 ---')
+    print(f'历元数（有数据）: {len(epochs_with_data)}')
+    print(f'卫星种类:         {len(sats)} 颗')
+    print(f'仰角范围:         {min(elevs):.1f}° ~ {max(elevs):.1f}°，均值 {np.mean(elevs):.1f}°')
+    print(f'方位角范围:       {min(azims):.1f}° ~ {max(azims):.1f}°')
+    print(f'\n星座分布（卫星×历元记录数）:')
     for sys_char in ('G', 'C', 'E'):
+        cnt = sys_cnt.get(sys_char, 0)
         label = {'G': 'GPS', 'C': 'BeiDou', 'E': 'Galileo'}[sys_char]
-        cnt = sys_counts.get(sys_char, 0)
         pct = 100.0 * cnt / len(rows) if rows else 0.0
-        print(f'  {label:7s} ({sys_char}): {cnt:6d}  ({pct:.1f}%)')
+        print(f'  {label:8s} ({sys_char}): {cnt:6d} 条  ({pct:.1f}%)')
+    total_known = sum(sys_cnt.get(s, 0) for s in ('G', 'C', 'E'))
+    other = len(rows) - total_known
+    if other:
+        print(f'  其他:           {other:6d} 条')

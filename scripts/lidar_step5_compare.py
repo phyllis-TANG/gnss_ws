@@ -283,7 +283,7 @@ const colors = {{TP:'#2ecc71',FP:'#e74c3c',TN:'#3498db',FN:'#f39c12'}};
 const cats = ['TP','FP','TN','FN'];
 const scDatasets = cats.map(cat => ({{
   label: cat,
-  data: scRaw.filter(d=>d.cat===cat).map(d=>{{return{{x:d.az,y:d.el,sat:d.sat,dist:d.dist}}}}),
+  data: scRaw.filter(d=>d.cat===cat).map(d=>({{x:d.x,y:d.y,sat:d.sat,dist:d.dist}})),
   backgroundColor: colors[cat]+'88',
   borderColor: colors[cat],
   pointRadius: 3,

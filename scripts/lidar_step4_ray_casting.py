@@ -35,10 +35,14 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--azel',      default='/root/epoch_sat_azel.csv')
 ap.add_argument('--pcd',       default='/root/urbannav_map.pcd')
 ap.add_argument('--out',       default='/root/lidar_nlos_prediction.csv')
-ap.add_argument('--voxel',     type=float, default=0.5,
+ap.add_argument('--voxel',      type=float, default=0.5,
                 help='体素大小（米），射线步进粒度（默认 0.5m）')
 ap.add_argument('--max_range', type=float, default=80.0,
                 help='射线最大追踪距离（米），超出则判 LOS（默认 80m）')
+ap.add_argument('--start_dist', type=float, default=5.0,
+                help='射线起始距离（米），跳过接收机周围碎点（默认 5m）')
+ap.add_argument('--min_z',     type=float, default=1.0,
+                help='体素地图最低 Z（ENU，米），过滤地面点（默认 1m，即接收机高度以上）')
 ap.add_argument('--traj',      default='/root/novatel_trajectory.csv',
                 help='INSPVAX 轨迹 CSV（用于确定 ENU 原点，与 Step 2 一致）')
 ap.add_argument('--rx_height_offset', type=float, default=0.0,
@@ -138,6 +142,11 @@ cloud_min = cloud.min(axis=0)
 vox_idx = np.floor((cloud - cloud_min) / vs).astype(np.int32)
 # 存入 set，用 tuple 或 packed int 加速查询
 # 用 uint64 编码 (ix, iy, iz)，各用 21 bit（最大 ~2M 体素/轴）
+# 过滤地面点：只保留 Z > min_z 的点（地面不遮挡卫星信号）
+z_mask = cloud[:, 2] > args.min_z
+cloud_filtered = cloud[z_mask]
+print(f'  过滤地面点（Z>{args.min_z}m）后剩余 {len(cloud_filtered):,} 个点')
+vox_idx = np.floor((cloud_filtered - cloud_min) / vs).astype(np.int32)
 ix, iy, iz = vox_idx[:, 0], vox_idx[:, 1], vox_idx[:, 2]
 
 # 检查范围
@@ -159,7 +168,7 @@ def is_occupied(px, py, pz):
     key = ix | (iy << 21) | (iz << 42)
     return key in voxel_set
 
-def ray_cast(rx_enu, azim_deg, elev_deg, max_range, step):
+def ray_cast(rx_enu, azim_deg, elev_deg, max_range, step, start_dist):
     """
     从 rx_enu 向 (azim_deg, elev_deg) 方向发射射线。
     返回 (nlos: bool, hit_dist: float)。
@@ -173,7 +182,7 @@ def ray_cast(rx_enu, azim_deg, elev_deg, max_range, step):
     du = math.sin(el_r)             # ENU 天顶分量
 
     x0, y0, z0 = rx_enu
-    dist = step  # 从一个 step 处开始（跳过接收机自身体素）
+    dist = start_dist  # 跳过接收机周围碎点（离线地图积累导致近处密集）
     while dist <= max_range:
         px = x0 + de * dist
         py = y0 + dn * dist
@@ -253,7 +262,7 @@ for i, row in enumerate(all_azel):
     azim_deg = float(row['azimuth_deg'])
     elev_deg = float(row['elevation_deg'])
 
-    nlos, hit_dist = ray_cast(rx_enu, azim_deg, elev_deg, args.max_range, step)
+    nlos, hit_dist = ray_cast(rx_enu, azim_deg, elev_deg, args.max_range, step, args.start_dist)
 
     if nlos:
         nlos_count += 1

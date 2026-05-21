@@ -434,17 +434,17 @@ for ep_i, epoch in enumerate(obs_epochs):
                 if s['is_nlos']:
                     plan = s['planarity']
                     if plan >= 0.7:
-                        # High-quality surface normal: apply full correction
+                        # Reliable surface: apply correction, keep good weight
                         psr = s['psr_tropo'] - s['delta_l']
-                        w   = s['w_base'] * plan
+                        w   = s['w_base'] * plan * 0.5
                     elif plan >= 0.5:
-                        # Medium quality: partial correction, reduced weight
+                        # Medium quality: apply scaled correction, reduced weight
                         psr = s['psr_tropo'] - s['delta_l'] * plan
-                        w   = s['w_base'] * 0.2
+                        w   = s['w_base'] * 0.15
                     else:
-                        # Low quality normal: exclude (unreliable delta-L)
+                        # Low quality normal: no correction, just down-weight
                         psr = s['psr_tropo']
-                        w   = 0.0
+                        w   = s['w_base'] * 0.05
                 else:
                     w   = s['w_base']
                     psr = s['psr_tropo']

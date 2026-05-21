@@ -55,8 +55,8 @@ from scipy.spatial import cKDTree
 ap = argparse.ArgumentParser()
 ap.add_argument('--nlos',          default='/root/lidar_nlos_prediction.csv',
                 help='Step 4 输出，含 lidar_nlos 和 hit_dist_m')
-ap.add_argument('--azel',          default='/root/epoch_sat_azel.csv',
-                help='Step 3 输出，含接收机 LLH')
+ap.add_argument('--azel',          default='/root/epoch_sat_azel_multignss.csv',
+                help='Step 3 输出，含接收机 LLH（多星座时用 epoch_sat_azel_multignss.csv）')
 ap.add_argument('--pcd',           default='/root/urbannav_map.pcd',
                 help='Step 2 输出，ENU 坐标点云地图')
 ap.add_argument('--traj',          default='/root/novatel_trajectory.csv',

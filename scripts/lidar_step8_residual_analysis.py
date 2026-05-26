@@ -85,6 +85,35 @@ def tropo_delay(elev_deg):
     el = max(elev_deg, 3.0)
     return 2.3 / math.sin(math.radians(el) + 0.017)
 
+GPS_EPOCH_UNIX = 315964800
+
+def sat_clock_corr(eph, rinex_t):
+    """用 GPS TOW 直接从星历参数计算卫星时钟修正量（秒）。
+    绕过 compute_sat_position 返回的 dt_sv——后者在某些 rinex_utils 实现中
+    用 (unix_t - toc_tow) 计算 a_f1 * dt，导致虚高 1000 倍的误差。
+    """
+    gps_tow = (rinex_t - GPS_EPOCH_UNIX) % 604800
+
+    def _g(obj, *names):
+        for n in names:
+            v = getattr(obj, n, None)
+            if v is not None:
+                return float(v)
+        return None
+
+    af0 = _g(eph, 'af0', 'a_f0', 'SVclockBias', 'clock_bias')
+    if af0 is None:
+        return 0.0   # 无法获取参数，跳过卫星钟修正
+    af1  = _g(eph, 'af1', 'a_f1', 'SVclockDrift',    'clock_drift') or 0.0
+    af2  = _g(eph, 'af2', 'a_f2', 'SVclockDriftRate')               or 0.0
+    tgd  = _g(eph, 'tgd', 'TGD',  'group_delay_diff')               or 0.0
+    toc  = _g(eph, 'toc', 'TOC',  'toe', 'TOE')                     or gps_tow
+
+    dt = gps_tow - toc
+    if abs(dt) > 302400:           # 半周滚转修正
+        dt -= 604800 * math.copysign(1, dt)
+    return af0 + af1 * dt + af2 * dt**2 - tgd
+
 def load_nav(path, prefix):
     try:
         raw = read_rinex_nav(path)
@@ -214,9 +243,12 @@ for ep_i, epoch in enumerate(obs_epochs):
         eph = find_closest_ephem(ephem.get(sat_id, []), rinex_t)
         if eph is None:
             continue
-        sat_ecef_raw, dt_sv = compute_sat_position(eph, rinex_t)
+        sat_ecef_raw, _ = compute_sat_position(eph, rinex_t)   # dt_sv 不使用
         if sat_ecef_raw is None:
             continue
+
+        # 卫星时钟修正：用 GPS TOW 直接计算，避免 dt_sv 的 1000x 单位错误
+        dt_sv = sat_clock_corr(eph, rinex_t)
 
         psr_raw = 0.0
         for k in PSR_KEYS.get(sys_char, ['C1C']):

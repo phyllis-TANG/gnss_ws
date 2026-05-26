@@ -253,21 +253,22 @@ for ep_i, epoch in enumerate(obs_epochs):
     if not sats:
         continue
 
-    # ── 用 LOS 卫星估计每星座时钟偏差 ────────────────────────────────────────────
-    # clk_bias[sys] = mean(psr_corr - r_gt) over LOS sats of that sys
+    # ── 用 LOS 卫星估计每星座时钟偏差（中位数，对 NLOS 漏检鲁棒）────────────────
+    # clk_bias[sys] = median(psr_corr - r_gt) over LOS sats of that sys
+    # 中位数：当 "LOS" 集合中有少量 NLOS 漏检时，均值会被拉偏；中位数不受影响
     los_by_sys = defaultdict(list)
     for s in sats:
         if s['is_nlos'] == 0:
             los_by_sys[s['sys']].append(s['psr_corr'] - s['r_gt'])
 
-    # 需要至少有一颗 LOS 卫星才能估计时钟偏差
-    if not any(len(v) >= 1 for v in los_by_sys.values()):
+    # 需要至少 3 颗 LOS 卫星，单颗时中位数无意义且容易被污染
+    if not any(len(v) >= 3 for v in los_by_sys.values()):
         clk_fail += 1
         continue
 
-    clk_bias = {sys: float(np.mean(residuals))
+    clk_bias = {sys: float(np.median(residuals))
                 for sys, residuals in los_by_sys.items()
-                if residuals}
+                if len(residuals) >= 3}
 
     # ── 计算每颗 NLOS 卫星的实际伪距误差 ────────────────────────────────────────
     for s in sats:

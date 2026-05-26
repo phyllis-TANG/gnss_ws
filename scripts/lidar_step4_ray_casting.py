@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 lidar_step4_ray_casting.py
-从 3D 点云地图中，对每颗卫星做射线追踪，判断 LOS / NLOS。
+从 3D 点云地图中，对每颗卫星做射线追踪，判断 LOS / NLOS，并支持 2-bounce 多径建模。
 
 原理：
   - 地图点云（ENU 坐标，urbannav_map.pcd）体素化为 3D 占用网格
@@ -9,6 +9,8 @@ lidar_step4_ray_casting.py
       接收机位置（ENU）→ 根据 epoch_sat_azel.csv 的 azimuth/elevation
       沿该方向发射射线，步进 voxel_size 检查占用
       若在 max_range 内遇到占用体素 → NLOS；否则 → LOS
+  - 2-bounce：在第一个反射点用 PCA 估计表面法向量，沿镜面反射方向
+      继续追踪第二个反射面，输出双反射的原始路径长度
 
 输入：
   - epoch_sat_azel.csv（Step 3 输出）
@@ -16,7 +18,8 @@ lidar_step4_ray_casting.py
 
 输出：
   - lidar_nlos_prediction.csv，列：unix_t, utc_t, sat_id, sys, prn,
-    elevation_deg, azimuth_deg, lidar_nlos (0=LOS, 1=NLOS), hit_dist_m
+    elevation_deg, azimuth_deg, lidar_nlos (0=LOS, 1=NLOS), hit_dist_m,
+    n_bounces, hit_dist2_m, normal_e, normal_n, normal_u
 
 用法：
   python3 lidar_step4_ray_casting.py \
@@ -25,7 +28,9 @@ lidar_step4_ray_casting.py
     --out   /root/lidar_nlos_prediction.csv \
     --voxel 0.5 \
     --max_range 80.0 \
-    --rx_height_offset 0.0
+    --rx_height_offset 0.0 \
+    --max_range2 30.0 \
+    --normal_radius 1.5
 """
 
 import argparse, csv, math, struct, time
@@ -47,6 +52,10 @@ ap.add_argument('--traj',      default='/root/novatel_trajectory.csv',
                 help='INSPVAX 轨迹 CSV（用于确定 ENU 原点，与 Step 2 一致）')
 ap.add_argument('--rx_height_offset', type=float, default=0.0,
                 help='接收机高度相对地图的补偿（米），通常为 0')
+ap.add_argument('--max_range2', type=float, default=30.0,
+                help='2-bounce 第二段射线最大追踪距离（米，默认 30m）')
+ap.add_argument('--normal_radius', type=float, default=1.5,
+                help='法向量 PCA 搜索半径（米，默认 1.5m）')
 args = ap.parse_args()
 
 # ── 读 PCD 文件（ASCII 或 binary） ─────────────────────────────────
@@ -77,7 +86,6 @@ def read_pcd(path):
     types   = header.get('TYPE', [])
     data_fmt = header.get('DATA', 'ascii')
 
-    # 找 x/y/z 列索引
     try:
         xi = fields.index('x')
         yi = fields.index('y')
@@ -99,7 +107,6 @@ def read_pcd(path):
 
     elif data_fmt in ('binary', 'binary_compressed'):
         if data_fmt == 'binary_compressed':
-            # 解压 lzf
             import ctypes, io
             byte_offset = sum(len(l) + 1 for l in lines[:data_start])
             raw_data = raw[byte_offset:]
@@ -113,9 +120,7 @@ def read_pcd(path):
             byte_offset = sum(len(l) + 1 for l in lines[:data_start])
             data_bytes = raw[byte_offset:]
 
-        # 每点字节大小
         point_step = sum(sizes)
-        # 构建 numpy dtype
         fmt_map = {'F': 'f', 'I': 'i', 'U': 'u'}
         dtype_list = []
         for i, (f, s, t) in enumerate(zip(fields, sizes, types)):
@@ -138,18 +143,12 @@ t1 = time.time()
 
 vs = args.voxel
 cloud_min = cloud.min(axis=0)
-# 转体素索引
-vox_idx = np.floor((cloud - cloud_min) / vs).astype(np.int32)
-# 存入 set，用 tuple 或 packed int 加速查询
-# 用 uint64 编码 (ix, iy, iz)，各用 21 bit（最大 ~2M 体素/轴）
-# 过滤地面点：只保留 Z > min_z 的点（地面不遮挡卫星信号）
 z_mask = cloud[:, 2] > args.min_z
 cloud_filtered = cloud[z_mask]
 print(f'  过滤地面点（Z>{args.min_z}m）后剩余 {len(cloud_filtered):,} 个点')
 vox_idx = np.floor((cloud_filtered - cloud_min) / vs).astype(np.int32)
 ix, iy, iz = vox_idx[:, 0], vox_idx[:, 1], vox_idx[:, 2]
 
-# 检查范围
 assert ix.max() < (1 << 21), '地图太大，x 超过 21bit 索引范围'
 assert iy.max() < (1 << 21), '地图太大，y 超过 21bit 索引范围'
 assert iz.max() < (1 << 21), '地图太大，z 超过 21bit 索引范围'
@@ -168,6 +167,59 @@ def is_occupied(px, py, pz):
     key = ix | (iy << 21) | (iz << 42)
     return key in voxel_set
 
+def get_surface_normal(hit_x, hit_y, hit_z, radius):
+    """
+    用 PCA 估计 hit 点处的表面法向量。
+    在 radius 内收集相邻占用体素中心，取协方差最小特征向量。
+    返回归一化法向量，若邻域不足 3 个体素则返回 None。
+    """
+    r_vox = int(math.ceil(radius / vs))
+    hix = int(math.floor((hit_x - cloud_min[0]) / vs))
+    hiy = int(math.floor((hit_y - cloud_min[1]) / vs))
+    hiz = int(math.floor((hit_z - cloud_min[2]) / vs))
+
+    nearby = []
+    for dx in range(-r_vox, r_vox + 1):
+        for dy in range(-r_vox, r_vox + 1):
+            for dz in range(-r_vox, r_vox + 1):
+                nx, ny, nz = hix + dx, hiy + dy, hiz + dz
+                if nx < 0 or ny < 0 or nz < 0:
+                    continue
+                key = int(nx) | (int(ny) << 21) | (int(nz) << 42)
+                if key in voxel_set:
+                    cx = (nx + 0.5) * vs + cloud_min[0]
+                    cy = (ny + 0.5) * vs + cloud_min[1]
+                    cz = (nz + 0.5) * vs + cloud_min[2]
+                    nearby.append([cx, cy, cz])
+
+    if len(nearby) < 3:
+        return None
+
+    pts = np.array(nearby, dtype=np.float64)
+    centroid = pts.mean(axis=0)
+    cov = np.cov((pts - centroid).T)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    # smallest eigenvalue → normal (direction of least spread = perpendicular to surface)
+    return eigenvectors[:, 0]
+
+def ray_cast_from_point(origin, direction, max_range, step):
+    """
+    从 origin 沿 direction 发射射线（已归一化）。
+    跳过起始一步，避免立即重命中出发体素。
+    返回 (nlos: bool, hit_dist: float)。
+    """
+    ox, oy, oz = origin
+    dx, dy, dz = direction
+    dist = step
+    while dist <= max_range:
+        px = ox + dx * dist
+        py = oy + dy * dist
+        pz = oz + dz * dist
+        if is_occupied(px, py, pz):
+            return True, dist
+        dist += step
+    return False, max_range
+
 def ray_cast(rx_enu, azim_deg, elev_deg, max_range, step, start_dist):
     """
     从 rx_enu 向 (azim_deg, elev_deg) 方向发射射线。
@@ -177,12 +229,12 @@ def ray_cast(rx_enu, azim_deg, elev_deg, max_range, step, start_dist):
     az_r  = math.radians(azim_deg)
     el_r  = math.radians(elev_deg)
     cos_el = math.cos(el_r)
-    de = math.sin(az_r) * cos_el   # ENU 东分量
-    dn = math.cos(az_r) * cos_el   # ENU 北分量
-    du = math.sin(el_r)             # ENU 天顶分量
+    de = math.sin(az_r) * cos_el
+    dn = math.cos(az_r) * cos_el
+    du = math.sin(el_r)
 
     x0, y0, z0 = rx_enu
-    dist = start_dist  # 跳过接收机周围碎点（离线地图积累导致近处密集）
+    dist = start_dist
     while dist <= max_range:
         px = x0 + de * dist
         py = y0 + dn * dist
@@ -193,20 +245,9 @@ def ray_cast(rx_enu, azim_deg, elev_deg, max_range, step, start_dist):
     return False, max_range
 
 # ── 读 azel CSV，做射线追踪 ─────────────────────────────────────────
-print(f'\n开始射线追踪（max_range={args.max_range}m，step={args.voxel}m）...')
+print(f'\n开始射线追踪（max_range={args.max_range}m，step={args.voxel}m，'
+      f'max_range2={args.max_range2}m，normal_radius={args.normal_radius}m）...')
 t2 = time.time()
-
-# 需要把接收机位置转到 ENU（Step 3 输出的是 LLH，用与地图相同的 ENU 原点）
-# ENU 原点：地图里 cloud_min 只是包围盒原点，不是 ENU 原点。
-# Step 3 的 rx_lat/rx_lon/rx_alt 与 Step 2 使用的 INSPVAX 一致。
-# 地图坐标系原点 = traj[0]（第一个 INSPVAX 位姿）的 ENU 原点。
-# 需从 azel CSV 重建 ENU 坐标：读第一行的 rx_lat/rx_lon/rx_alt 不够，
-# 因为我们不知道 ENU 原点，需要记录它。
-#
-# 解决方案：从 azel CSV 读取 rx_lat/rx_lon/rx_alt，
-# 以第一个历元的接收机位置作为 ENU 原点（与 Step 2 对齐）。
-# 但 Step 2 用 traj[0] 作为 ENU 原点，此处应使用相同原点。
-# → 从 novatel_trajectory.csv 的第一行读 ref_lat/ref_lon/ref_alt。
 
 def lla_to_ecef(lat_deg, lon_deg, alt_m):
     a, e2 = 6378137.0, 6.69437999014e-3
@@ -228,7 +269,7 @@ def ecef_to_enu(ecef, ref_ecef, ref_lat, ref_lon):
     ])
     return R @ (ecef - ref_ecef)
 
-# 读 ENU 原点：必须与 Step 2 完全一致，即 traj[0]（novatel_trajectory.csv 首行）
+# ENU 原点：与 Step 2 完全一致，即 traj[0]（novatel_trajectory.csv 首行）
 with open(args.traj) as f:
     traj_row0 = next(csv.DictReader(f))
 ref_lat = float(traj_row0['lat'])
@@ -238,12 +279,14 @@ ref_ecef = lla_to_ecef(ref_lat, ref_lon, ref_alt)
 print(f'ENU 原点: lat={ref_lat:.5f}, lon={ref_lon:.5f}（来自 novatel_trajectory.csv 首行，与 Step 2 一致）')
 
 COLS_OUT = ['unix_t', 'utc_t', 'sat_id', 'sys', 'prn',
-            'elevation_deg', 'azimuth_deg', 'lidar_nlos', 'hit_dist_m']
+            'elevation_deg', 'azimuth_deg', 'lidar_nlos', 'hit_dist_m',
+            'n_bounces', 'hit_dist2_m', 'normal_e', 'normal_n', 'normal_u']
 
 out_rows = []
 nlos_count = 0
 los_count  = 0
-step = args.voxel  # 射线步进等于体素大小
+bounce2_count = 0
+step = args.voxel
 
 with open(args.azel) as f:
     reader = csv.DictReader(f)
@@ -255,41 +298,94 @@ for i, row in enumerate(all_azel):
     rx_lon = float(row['rx_lon'])
     rx_alt = float(row['rx_alt']) + args.rx_height_offset
 
-    # LLH → ECEF → ENU（以 ref 为原点）
     rx_ecef = lla_to_ecef(rx_lat, rx_lon, rx_alt)
     rx_enu  = ecef_to_enu(rx_ecef, ref_ecef, ref_lat, ref_lon)
 
     azim_deg = float(row['azimuth_deg'])
     elev_deg = float(row['elevation_deg'])
 
+    # ── 第一段射线 ────────────────────────────────────────────────────
     nlos, hit_dist = ray_cast(rx_enu, azim_deg, elev_deg, args.max_range, step, args.start_dist)
+
+    n_bounces  = 0
+    hit_dist2  = 0.0
+    normal_e   = 0.0
+    normal_n   = 0.0
+    normal_u   = 0.0
 
     if nlos:
         nlos_count += 1
+        n_bounces = 1
+
+        # 计算第一击中点（ENU）
+        az_r   = math.radians(azim_deg)
+        el_r   = math.radians(elev_deg)
+        cos_el = math.cos(el_r)
+        de = math.sin(az_r) * cos_el
+        dn = math.cos(az_r) * cos_el
+        du = math.sin(el_r)
+        d  = np.array([de, dn, du])   # 朝卫星方向单位向量
+
+        x0, y0, z0 = rx_enu
+        h1x = x0 + de * hit_dist
+        h1y = y0 + dn * hit_dist
+        h1z = z0 + du * hit_dist
+
+        # ── 估计第一击中面的法向量（PCA）────────────────────────────
+        normal = get_surface_normal(h1x, h1y, h1z, args.normal_radius)
+        if normal is not None:
+            # 确保法向量朝向接收机（与入射方向相反）
+            if np.dot(normal, d) > 0:
+                normal = -normal
+            normal_e, normal_n, normal_u = float(normal[0]), float(normal[1]), float(normal[2])
+
+            # ── 镜面反射方向：d_r = d - 2*(d·n)*n ────────────────
+            # 这是从第一反射面看，信号来自哪个方向（用于寻找第二反射面）
+            d_dot_n = float(np.dot(d, normal))
+            d_refl  = d - 2.0 * d_dot_n * normal
+            d_refl_len = float(np.linalg.norm(d_refl))
+            if d_refl_len > 1e-6:
+                d_refl = d_refl / d_refl_len
+
+                # ── 第二段射线（从第一击中点沿反射方向）────────────
+                nlos2, dist2 = ray_cast_from_point(
+                    (h1x, h1y, h1z), d_refl,
+                    args.max_range2, step
+                )
+                if nlos2:
+                    n_bounces = 2
+                    hit_dist2 = dist2
+                    bounce2_count += 1
     else:
         los_count += 1
 
     out_rows.append({
-        'unix_t':       row['unix_t'],
-        'utc_t':        row['utc_t'],
-        'sat_id':       row['sat_id'],
-        'sys':          row['sys'],
-        'prn':          row['prn'],
+        'unix_t':        row['unix_t'],
+        'utc_t':         row['utc_t'],
+        'sat_id':        row['sat_id'],
+        'sys':           row['sys'],
+        'prn':           row['prn'],
         'elevation_deg': row['elevation_deg'],
-        'azimuth_deg':  row['azimuth_deg'],
-        'lidar_nlos':   1 if nlos else 0,
-        'hit_dist_m':   f'{hit_dist:.2f}',
+        'azimuth_deg':   row['azimuth_deg'],
+        'lidar_nlos':    1 if nlos else 0,
+        'hit_dist_m':    f'{hit_dist:.2f}',
+        'n_bounces':     n_bounces,
+        'hit_dist2_m':   f'{hit_dist2:.2f}',
+        'normal_e':      f'{normal_e:.4f}',
+        'normal_n':      f'{normal_n:.4f}',
+        'normal_u':      f'{normal_u:.4f}',
     })
 
     if (i + 1) % 500 == 0:
         elapsed = time.time() - t2
         rate = (i + 1) / elapsed
         remain = (total - i - 1) / rate if rate > 0 else 0
-        print(f'\r  {i+1}/{total} 条，NLOS={nlos_count} LOS={los_count}，'
+        print(f'\r  {i+1}/{total} 条，NLOS={nlos_count}（2-bounce={bounce2_count}）LOS={los_count}，'
               f'速度 {rate:.0f} 条/s，剩余 {remain:.0f}s', end='', flush=True)
 
 print(f'\n射线追踪完成，耗时 {time.time()-t2:.0f}s')
 print(f'  LOS: {los_count}，NLOS: {nlos_count}，NLOS 比例: {100*nlos_count/max(total,1):.1f}%')
+print(f'  其中 2-bounce: {bounce2_count}（占 NLOS {100*bounce2_count/max(nlos_count,1):.1f}%）')
 
 # ── 写输出 ──────────────────────────────────────────────────────────
 with open(args.out, 'w', newline='') as f:
@@ -298,4 +394,5 @@ with open(args.out, 'w', newline='') as f:
     w.writerows(out_rows)
 
 print(f'已保存：{args.out}')
-print('\n下一步：运行 lidar_step5_compare.py 与 del2AINLOS 标签对比')
+print('\n新增列：n_bounces（0/1/2）、hit_dist2_m（第二击中距离）、normal_e/n/u（第一击中面法向量）')
+print('下一步：运行 lidar_step5_compare.py 与 del2AINLOS 标签对比')

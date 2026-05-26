@@ -2,3 +2,7 @@ PSRI-73-2309-PR-Dev/
 *.ubx
 *.UBX
 scripts/__pycache__/
+
+# Weekly report deliverable — kept in chat only, not uploaded to GitHub (per request)
+GNSS_LiDAR_RayTracing_Weekly_EN.pptx
+scripts/make_weekly_report_en.py

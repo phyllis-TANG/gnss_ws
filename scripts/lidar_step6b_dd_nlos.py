@@ -308,24 +308,51 @@ def match_gt(utc_t):
 
 # ── load HKSC reference station obs ─────────────────────────────────
 print(f'Parsing reference obs: {args.ref_obs}')
-ref_ecef, ref_epochs = parse_rinex2_obs(args.ref_obs)
-print(f'  {len(ref_epochs)} reference epochs parsed')
-if ref_ecef is not None:
-    ref_lat, ref_lon, ref_alt = (
-        math.degrees(math.atan2(ref_ecef[2],
-            math.sqrt(ref_ecef[0]**2 + ref_ecef[1]**2))),
-        math.degrees(math.atan2(ref_ecef[1], ref_ecef[0])),
-        0.0)
-    print(f'  HKSC position: {ref_lat:.4f}°N  {ref_lon:.4f}°E  (ECEF {ref_ecef})')
+
+# Try RINEX 2 parser first; if it yields 0 epochs the file is RINEX 3 → use rinex_utils
+ref_ecef_r2, ref_epochs_r2 = parse_rinex2_obs(args.ref_obs)
+ref_ecef = ref_ecef_r2  # ECEF from header (works for both RINEX 2 and 3 headers)
+
+if len(ref_epochs_r2) > 0:
+    ref_epochs = ref_epochs_r2
+    print(f'  {len(ref_epochs)} reference epochs (RINEX 2 parser)')
 else:
-    print('  [WARN] APPROX POSITION not found in reference header')
-    ref_ecef = np.array([-2411594.0, 5382988.0, 2406498.0])  # HK TST fallback
+    # File is RINEX 3 — use the same read_rinex_obs as the rover
+    print('  RINEX 2 parser got 0 epochs; trying read_rinex_obs (RINEX 3)...')
+    ref_raw = read_rinex_obs(args.ref_obs)
+    ref_epochs = []
+    PSR_KEYS_REF = ['C1C', 'C1P', 'C1X', 'C2C', 'C2P',  # GPS
+                    'C1C', 'C1P']                          # GLONASS fallback
+    for ep in ref_raw:
+        obs_dict = {}
+        for obs in ep.obs_list:
+            sid      = obs.sat_id
+            sys_char = obs.sys if obs.sys else sid[0]
+            if sys_char not in ('G', 'R'):
+                continue
+            for k in PSR_KEYS_REF:
+                if k in obs.pseudorange and obs.pseudorange[k] > 1e4:
+                    obs_dict[sid] = obs.pseudorange[k]; break
+        if obs_dict:
+            ref_epochs.append({'rinex_t': ep.time_unix, 'obs': obs_dict})
+    print(f'  {len(ref_epochs)} reference epochs (RINEX 3 / rinex_utils)')
+
+if ref_ecef is not None:
+    ref_lat_deg = math.degrees(math.atan2(ref_ecef[2],
+                  math.sqrt(ref_ecef[0]**2 + ref_ecef[1]**2)))
+    ref_lon_deg = math.degrees(math.atan2(ref_ecef[1], ref_ecef[0]))
+    print(f'  HKSC position: {ref_lat_deg:.4f}°N  {ref_lon_deg:.4f}°E')
+else:
+    print('  [WARN] APPROX POSITION not found; using HK TST fallback')
+    ref_ecef = np.array([-2414266.9, 5386768.9, 2407460.0])
 
 # build lookup: rinex_t → obs dict (sorted for binary search)
-ref_sorted_t = np.array([e['rinex_t'] for e in ref_epochs])
-ref_sorted_epochs = ref_epochs  # same order
+ref_sorted_t      = np.array([e['rinex_t'] for e in ref_epochs])
+ref_sorted_epochs = ref_epochs
 
 def match_ref(rinex_t):
+    if len(ref_sorted_t) == 0:
+        return None
     idx = int(np.searchsorted(ref_sorted_t, rinex_t))
     idx = min(max(idx, 0), len(ref_sorted_t)-1)
     if idx > 0 and abs(ref_sorted_t[idx-1]-rinex_t) < abs(ref_sorted_t[idx]-rinex_t):

@@ -36,7 +36,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-# ── rinex_utils path ─────────────────────────────────────────────────
+# ── rinex_utils path ───────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 for _p in [
     '/root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS/scripts',
@@ -49,7 +49,7 @@ for _p in [
 from rinex_utils import (read_rinex_obs, read_rinex_nav,
                           compute_sat_position, find_closest_ephem, llh_to_ecef)
 
-# ── constants ────────────────────────────────────────────────────────
+# ── constants ──────────────────────────────────────────────
 LEAP_SECONDS   = 18
 C_LIGHT        = 299792458.0
 OMEGA_E        = 7.2921151467e-5
@@ -71,7 +71,7 @@ ap.add_argument('--ref_tol',   type=float, default=1.0,
                 help='Max time diff (s) to match reference epoch')
 args = ap.parse_args()
 
-# ── RINEX 2 obs parser ───────────────────────────────────────────────
+# ── RINEX 2 obs parser ────────────────────────────────────────────
 def _rinex2_epoch_to_unix(yy, mm, dd, hh, mi, ss):
     """GPS calendar time → Unix timestamp (= GPS_time_as_unix, matching rinex_utils)."""
     year = 2000 + yy if yy < 80 else 1900 + yy
@@ -107,7 +107,6 @@ def parse_rinex2_obs(path):
             if 'TYPES OF OBSERV' in label:
                 n_types = int(line[:6].strip() or 0)
                 raw     = line[6:60]
-                # up to 9 per line (6 chars each), continuation on next line
                 types_so_far = [raw[j*6:(j+1)*6].strip() for j in range(min(n_types, 9))]
                 obs_types.extend(t for t in types_so_far if t)
                 cont_lines = math.ceil(n_types / 9) - 1
@@ -140,13 +139,11 @@ def parse_rinex2_obs(path):
             continue
 
         if flag != 0 or nsats == 0:
-            # skip non-OK epochs; read past their data lines
             for _ in range(nsats * math.ceil(max(len(obs_types), 1) / 5)):
                 if i < len(lines):
                     i += 1
             continue
 
-        # satellite list (3 chars each, up to 12 per line, continuation at col 32)
         sat_ids = []
         sat_part = line[32:68]
         for k in range(12):
@@ -167,15 +164,12 @@ def parse_rinex2_obs(path):
         n_lines_per_sat = math.ceil(len(obs_types) / 5) if obs_types else 1
 
         for raw_sid in sat_ids:
-            # normalise RINEX 2 sat ID: GNSS char + 2-digit PRN
-            # 'G01', 'R01', ' 1' → 'G01' or 'R01'
             raw_sid = raw_sid.strip()
             if not raw_sid:
                 for _ in range(n_lines_per_sat):
                     if i < len(lines): i += 1
                 continue
             if raw_sid[0].isdigit():
-                # bare number → GPS
                 sys_c  = 'G'
                 prn    = int(raw_sid)
                 sat_id = f'G{prn:02d}'
@@ -209,7 +203,6 @@ def parse_rinex2_obs(path):
                     except ValueError:
                         obs_vals.append(0.0)
 
-            # find C1 or P1 pseudorange
             psr = 0.0
             for want in ('C1', 'P1', 'C2', 'P2'):
                 if want in obs_types:
@@ -225,7 +218,7 @@ def parse_rinex2_obs(path):
     return ref_ecef, epochs
 
 
-# ── helpers ──────────────────────────────────────────────────────────
+# ── helpers ──────────────────────────────────────────────────────
 def sagnac_correct(sat_ecef, travel_time_s):
     theta = OMEGA_E * travel_time_s
     c, s  = math.cos(theta), math.sin(theta)
@@ -269,7 +262,7 @@ PSR_KEYS_ROVER = {
     'R': ['C1C', 'C1P'],
 }
 
-# ── load ground truth ────────────────────────────────────────────────
+# ── load ground truth ────────────────────────────────────────────
 print(f'Loading GT: {args.gt}')
 gt_times, gt_lats, gt_lons, gt_alts = [], [], [], []
 with open(args.gt) as f:
@@ -306,7 +299,7 @@ def match_gt(utc_t):
         return None
     return gt_lats[idx], gt_lons[idx], gt_alts[idx]
 
-# ── load HKSC reference station obs ─────────────────────────────────
+# ── load HKSC reference station obs ───────────────────────────────────
 print(f'Parsing reference obs: {args.ref_obs}')
 
 # Try RINEX 2 parser first; if it yields 0 epochs the file is RINEX 3 → use rinex_utils
@@ -321,8 +314,7 @@ else:
     print('  RINEX 2 parser got 0 epochs; trying read_rinex_obs (RINEX 3)...')
     ref_raw = read_rinex_obs(args.ref_obs)
     ref_epochs = []
-    PSR_KEYS_REF = ['C1C', 'C1P', 'C1X', 'C2C', 'C2P',  # GPS
-                    'C1C', 'C1P']                          # GLONASS fallback
+    PSR_KEYS_REF = ['C1C', 'C1P', 'C1X', 'C2C', 'C2P']
     for ep in ref_raw:
         obs_dict = {}
         for obs in ep.obs_list:
@@ -361,7 +353,7 @@ def match_ref(rinex_t):
         return None
     return ref_sorted_epochs[idx]['obs']
 
-# ── load navigation + rover obs ──────────────────────────────────────
+# ── load navigation + rover obs ────────────────────────────────────
 print('Loading navigation...')
 ephem = {}
 ephem.update(load_nav(args.nav_gps, 'G'))
@@ -381,7 +373,7 @@ with open(args.nlos_2b) as f:
         nlos_lidar[(row['unix_t'], row['sat_id'])] = 1
 print(f'  {len(nlos_lidar)} LiDAR NLOS records')
 
-# ── main DD loop ──────────────────────────────────────────────────────
+# ── main DD loop ────────────────────────────────────────────────────
 print(f'\nComputing DD residuals (threshold={args.dd_thresh} m)...')
 out_rows = []
 n_epoch_ok = n_epoch_skip_gt = n_epoch_skip_ref = n_epoch_skip_sats = 0
@@ -391,7 +383,6 @@ for ep_i, epoch in enumerate(obs_epochs):
     rinex_t = epoch.time_unix
     utc_t   = rinex_t - LEAP_SECONDS
 
-    # match GT
     gt_match = match_gt(utc_t)
     if gt_match is None:
         n_epoch_skip_gt += 1
@@ -399,21 +390,18 @@ for ep_i, epoch in enumerate(obs_epochs):
     gt_lat, gt_lon, gt_alt = gt_match
     gt_ecef = np.array(llh_to_ecef(gt_lat, gt_lon, gt_alt))
 
-    # match reference epoch
     ref_obs = match_ref(rinex_t)
     if ref_obs is None:
         n_epoch_skip_ref += 1
         continue
 
-    # compute SD residuals for each GPS sat
     sd_residuals = {}  # sat_id → (sd_resid, elev, rover_psr, ref_psr)
     for obs in epoch.obs_list:
         sat_id   = obs.sat_id
         sys_char = obs.sys if obs.sys else sat_id[0]
         if sys_char != 'G':
-            continue  # GPS only for now
+            continue
 
-        # rover pseudorange
         rover_psr = 0.0
         for k in PSR_KEYS_ROVER.get(sys_char, ['C1C']):
             if k in obs.pseudorange and obs.pseudorange[k] > 0:
@@ -421,12 +409,10 @@ for ep_i, epoch in enumerate(obs_epochs):
         if rover_psr <= 0:
             continue
 
-        # reference pseudorange
         ref_psr = ref_obs.get(sat_id, 0.0)
         if ref_psr <= 0:
             continue
 
-        # satellite position
         eph = find_closest_ephem(ephem.get(sat_id, []), rinex_t)
         if eph is None:
             continue
@@ -437,18 +423,14 @@ for ep_i, epoch in enumerate(obs_epochs):
         travel_time = rover_psr / C_LIGHT
         sat_ecef    = sagnac_correct(np.array(sat_ecef_raw), travel_time)
 
-        # elevation from GT position
         elev = elev_from_ecef(gt_ecef, sat_ecef, gt_lat, gt_lon)
         if elev < args.min_elev:
             continue
 
-        # geometric SD (no clock correction — cancels in DD)
         range_rover = float(np.linalg.norm(sat_ecef - gt_ecef))
         range_ref   = float(np.linalg.norm(sat_ecef - ref_ecef))
         sd_geom     = range_rover - range_ref
 
-        # satellite clock correction (same for both rover and ref → cancels in DD)
-        # tropo delay difference (small for short baseline, ~2-4 km)
         tropo_rover = tropo_delay(elev)
         ref_lat_rad = math.atan2(ref_ecef[2],
                                   math.sqrt(ref_ecef[0]**2 + ref_ecef[1]**2))
@@ -458,10 +440,7 @@ for ep_i, epoch in enumerate(obs_epochs):
                                       math.degrees(ref_lon_rad))
         tropo_ref   = tropo_delay(elev_ref)
 
-        # measured SD = rover_psr - ref_psr (satellite clock cancels)
         sd_measured = rover_psr - ref_psr
-
-        # SD residual = measured SD − geometric SD − Δtropo
         sd_resid    = sd_measured - sd_geom - (tropo_rover - tropo_ref)
 
         sd_residuals[sat_id] = (sd_resid, elev, rover_psr, ref_psr)
@@ -471,11 +450,9 @@ for ep_i, epoch in enumerate(obs_epochs):
         continue
     n_epoch_ok += 1
 
-    # pick pivot = highest elevation GPS sat
     pivot_sat  = max(sd_residuals.keys(), key=lambda s: sd_residuals[s][1])
     pivot_sd   = sd_residuals[pivot_sat][0]
 
-    # compute DD residuals and flag
     for sat_id, (sd_resid, elev, rover_psr, ref_psr) in sd_residuals.items():
         if sat_id == pivot_sat:
             dd_resid = 0.0
@@ -484,7 +461,6 @@ for ep_i, epoch in enumerate(obs_epochs):
 
         nlos_dd = 1 if abs(dd_resid) > args.dd_thresh else 0
 
-        # lidar label
         key_r  = (f'{rinex_t:.3f}', sat_id)
         key_u  = (f'{utc_t:.3f}',   sat_id)
         nlos_l = 1 if (nlos_lidar.get(key_r) or nlos_lidar.get(key_u)) else 0
@@ -520,7 +496,6 @@ print(f'  DD-flagged NLOS:             {n_dd_nlos}  ({100*n_dd_nlos/max(n_dd_com
 print(f'  LiDAR-flagged NLOS:          {n_lidar_nlos}  ({100*n_lidar_nlos/max(n_dd_computed,1):.1f}%)')
 print(f'  Combined (both) NLOS:        {n_combined_nlos}  ({100*n_combined_nlos/max(n_dd_computed,1):.1f}%)')
 
-# confusion matrix between DD and LiDAR
 tp = sum(1 for r in out_rows if r['nlos_dd']==1 and r['nlos_lidar']==1)
 fp = sum(1 for r in out_rows if r['nlos_dd']==1 and r['nlos_lidar']==0)
 fn = sum(1 for r in out_rows if r['nlos_dd']==0 and r['nlos_lidar']==1)
@@ -537,14 +512,14 @@ print(f'  Precision (of DD NLOS):       {prec:.3f}')
 print(f'  Recall    (of DD NLOS):       {rec:.3f}')
 print(f'  F1 score:                     {f1:.3f}')
 
-# ── save CSV ──────────────────────────────────────────────────────────
+# ── save CSV ────────────────────────────────────────────────────
 with open(args.out_csv, 'w', newline='') as f:
     if out_rows:
         w = csv.DictWriter(f, fieldnames=list(out_rows[0].keys()))
         w.writeheader(); w.writerows(out_rows)
 print(f'\nSaved CSV: {args.out_csv}  ({len(out_rows)} rows)')
 
-# ── plots ─────────────────────────────────────────────────────────────
+# ── plots ─────────────────────────────────────────────────────────
 def fig_to_b64(fig):
     buf = io.BytesIO()
     fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
@@ -554,7 +529,6 @@ def fig_to_b64(fig):
 
 figs_b64 = []
 
-# 1. DD residual histogram by elevation bin
 if out_rows:
     dd_vals    = np.array([float(r['dd_resid']) for r in out_rows])
     elev_vals  = np.array([float(r['elev_deg']) for r in out_rows])
@@ -581,7 +555,6 @@ if out_rows:
     plt.tight_layout()
     figs_b64.append(fig_to_b64(fig))
 
-    # 2. Confusion scatter: DD residual vs elevation, coloured by LiDAR label
     fig, ax = plt.subplots(figsize=(9, 5))
     for label, color, marker in [(0, '#2196F3', 'o'), (1, '#F44336', 'x')]:
         mask = nlos_l_m == label
@@ -598,7 +571,6 @@ if out_rows:
     plt.tight_layout()
     figs_b64.append(fig_to_b64(fig))
 
-    # 3. Venn-style NLOS agreement bar chart
     cats  = ['LiDAR only\n(FN_dd)', 'DD only\n(FP_dd)', 'Both\n(TP)', 'Neither\n(TN)']
     cnts  = [fn, fp, tp, tn]
     colors = ['#FF9800','#F44336','#4CAF50','#90CAF9']
@@ -612,7 +584,6 @@ if out_rows:
     plt.tight_layout()
     figs_b64.append(fig_to_b64(fig))
 
-    # 4. DD residual CDF for LiDAR-NLOS vs LiDAR-LOS
     fig, ax = plt.subplots(figsize=(7, 4))
     for label, color, lbl in [(0,'#2196F3','LiDAR LOS'), (1,'#F44336','LiDAR NLOS')]:
         mask = nlos_l_m == label

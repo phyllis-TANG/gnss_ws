@@ -55,7 +55,7 @@ for o in ep.obs_list[:5]:
         if snr_candidates:
             print(f'    SNR candidates: {snr_candidates}')
 
-# ── survey del2AINLOS ML files ────────────────────────────────────────
+# survey del2AINLOS ML files
 print('\n=== del2AINLOS ML classifier survey ===')
 base_dirs = [
     '/root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS',
@@ -71,7 +71,6 @@ for base in base_dirs:
             if fn.endswith('.py'):
                 fpath = os.path.join(root, fn)
                 rel   = os.path.relpath(fpath, base)
-                # peek for ML keywords
                 try:
                     txt = open(fpath).read(4000)
                     ml_kw = [k for k in ['classifier','RandomForest','SVM','sklearn',

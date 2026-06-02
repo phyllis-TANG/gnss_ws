@@ -193,14 +193,17 @@ def get_surface_normal(hit_x, hit_y, hit_z, radius):
                     nearby.append([cx, cy, cz])
 
     if len(nearby) < 3:
-        return None
+        return None, 0.0
 
     pts = np.array(nearby, dtype=np.float64)
     centroid = pts.mean(axis=0)
     cov = np.cov((pts - centroid).T)
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
     # smallest eigenvalue → normal (direction of least spread = perpendicular to surface)
-    return eigenvectors[:, 0]
+    # planarity = (λ_mid - λ_min) / λ_max  ∈ [0,1]; 1=perfect plane, 0=chaotic/linear
+    lam = eigenvalues  # ascending: lam[0]≤lam[1]≤lam[2]
+    planarity = float((lam[1] - lam[0]) / lam[2]) if lam[2] > 1e-9 else 0.0
+    return eigenvectors[:, 0], planarity
 
 def ray_cast_from_point(origin, direction, max_range, step):
     """
@@ -280,7 +283,8 @@ print(f'ENU 原点: lat={ref_lat:.5f}, lon={ref_lon:.5f}（来自 novatel_trajec
 
 COLS_OUT = ['unix_t', 'utc_t', 'sat_id', 'sys', 'prn',
             'elevation_deg', 'azimuth_deg', 'lidar_nlos', 'hit_dist_m',
-            'n_bounces', 'hit_dist2_m', 'normal_e', 'normal_n', 'normal_u']
+            'n_bounces', 'hit_dist2_m', 'normal_e', 'normal_n', 'normal_u',
+            'planarity']
 
 out_rows = []
 nlos_count = 0
@@ -312,6 +316,7 @@ for i, row in enumerate(all_azel):
     normal_e   = 0.0
     normal_n   = 0.0
     normal_u   = 0.0
+    planarity  = 0.0
 
     if nlos:
         nlos_count += 1
@@ -331,8 +336,8 @@ for i, row in enumerate(all_azel):
         h1y = y0 + dn * hit_dist
         h1z = z0 + du * hit_dist
 
-        # ── 估计第一击中面的法向量（PCA）────────────────────────────
-        normal = get_surface_normal(h1x, h1y, h1z, args.normal_radius)
+        # ── 估计第一击中面的法向量（PCA）+ planarity ─────────────────
+        normal, planarity = get_surface_normal(h1x, h1y, h1z, args.normal_radius)
         if normal is not None:
             # 确保法向量朝向接收机（与入射方向相反）
             if np.dot(normal, d) > 0:
@@ -374,6 +379,7 @@ for i, row in enumerate(all_azel):
         'normal_e':      f'{normal_e:.4f}',
         'normal_n':      f'{normal_n:.4f}',
         'normal_u':      f'{normal_u:.4f}',
+        'planarity':     f'{planarity:.3f}',
     })
 
     if (i + 1) % 500 == 0:

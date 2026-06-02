@@ -15,7 +15,7 @@ Method:
 
 Output CSV columns:
   rinex_t, sat_id, elev_deg, cn0, cn0_expected, cn0_deficit,
-  nlos_cn0, nlos_dd, nlos_lidar, nlos_any2 (any 2 of 3 agree NLOS)
+  nlos_cn0, nlos_dd, nlos_lidar, nlos_union (CN0∪DD), nlos_inter (CN0∩DD)
 
 Usage (inside container):
   python3 lidar_step8a_cn0_nlos.py \\
@@ -266,8 +266,12 @@ for epoch in obs_epochs:
         nlos_cn0   = 1 if deficit > args.cn0_thresh else 0
         nlos_dd    = dd_map.get((rinex_t_key, obs.sat_id), 0)
         nlos_lidar = lidar_map.get((rinex_t_key, obs.sat_id), 0)
-        # "any2": flagged by at least 2 out of 3 methods
-        nlos_any2  = 1 if (nlos_cn0 + nlos_dd + nlos_lidar) >= 2 else 0
+        # Fusion of the two GT-INDEPENDENT signal/geometry detectors.
+        # (We deliberately do NOT include nlos_lidar in the vote — LiDAR is
+        #  the evaluation ground truth, so folding it into the predictor
+        #  would be circular and inflate precision/recall.)
+        nlos_union = 1 if (nlos_cn0 or nlos_dd) else 0   # CN0 ∪ DD  (high recall)
+        nlos_inter = 1 if (nlos_cn0 and nlos_dd) else 0  # CN0 ∩ DD  (high precision)
 
         out_rows.append({
             'rinex_t':      f'{rinex_t:.3f}',
@@ -280,7 +284,8 @@ for epoch in obs_epochs:
             'nlos_cn0':     nlos_cn0,
             'nlos_dd':      nlos_dd,
             'nlos_lidar':   nlos_lidar,
-            'nlos_any2':    nlos_any2,
+            'nlos_union':   nlos_union,
+            'nlos_inter':   nlos_inter,
         })
 
 print(f'  {len(out_rows)} GPS L1 observations processed')
@@ -290,14 +295,16 @@ n_total    = len(out_rows)
 n_cn0      = sum(1 for r in out_rows if r['nlos_cn0'])
 n_dd       = sum(1 for r in out_rows if r['nlos_dd'])
 n_lidar    = sum(1 for r in out_rows if r['nlos_lidar'])
-n_any2     = sum(1 for r in out_rows if r['nlos_any2'])
+n_union    = sum(1 for r in out_rows if r['nlos_union'])
+n_inter    = sum(1 for r in out_rows if r['nlos_inter'])
 
 print(f'\n=== NLOS label summary ===')
 print(f'  Total GPS obs:     {n_total}')
 print(f'  CN0-flagged NLOS:  {n_cn0}  ({100*n_cn0/n_total:.1f}%)')
 print(f'  DD-flagged NLOS:   {n_dd}   ({100*n_dd/n_total:.1f}%)')
 print(f'  LiDAR-flagged:     {n_lidar} ({100*n_lidar/n_total:.1f}%)')
-print(f'  Any-2 consensus:   {n_any2}  ({100*n_any2/n_total:.1f}%)')
+print(f'  CN0 ∪ DD union:    {n_union}  ({100*n_union/n_total:.1f}%)')
+print(f'  CN0 ∩ DD inter:    {n_inter}  ({100*n_inter/n_total:.1f}%)')
 
 # confusion: CN0 vs LiDAR
 tp_cl = sum(1 for r in out_rows if r['nlos_cn0'] and r['nlos_lidar'])
@@ -317,25 +324,39 @@ prec_dl = tp_dl/(tp_dl+fp_dl) if (tp_dl+fp_dl) else 0
 rec_dl  = tp_dl/(tp_dl+fn_dl) if (tp_dl+fn_dl) else 0
 f1_dl   = 2*prec_dl*rec_dl/(prec_dl+rec_dl) if (prec_dl+rec_dl) else 0
 
-# confusion: any2 vs LiDAR
-tp_a2 = sum(1 for r in out_rows if r['nlos_any2'] and r['nlos_lidar'])
-fp_a2 = sum(1 for r in out_rows if r['nlos_any2'] and not r['nlos_lidar'])
-fn_a2 = sum(1 for r in out_rows if not r['nlos_any2'] and r['nlos_lidar'])
-tn_a2 = sum(1 for r in out_rows if not r['nlos_any2'] and not r['nlos_lidar'])
-prec_a2 = tp_a2/(tp_a2+fp_a2) if (tp_a2+fp_a2) else 0
-rec_a2  = tp_a2/(tp_a2+fn_a2) if (tp_a2+fn_a2) else 0
-f1_a2   = 2*prec_a2*rec_a2/(prec_a2+rec_a2) if (prec_a2+rec_a2) else 0
+# confusion: CN0 ∪ DD (union) vs LiDAR — the honest, GT-independent fusion
+tp_un = sum(1 for r in out_rows if r['nlos_union'] and r['nlos_lidar'])
+fp_un = sum(1 for r in out_rows if r['nlos_union'] and not r['nlos_lidar'])
+fn_un = sum(1 for r in out_rows if not r['nlos_union'] and r['nlos_lidar'])
+tn_un = sum(1 for r in out_rows if not r['nlos_union'] and not r['nlos_lidar'])
+prec_un = tp_un/(tp_un+fp_un) if (tp_un+fp_un) else 0
+rec_un  = tp_un/(tp_un+fn_un) if (tp_un+fn_un) else 0
+f1_un   = 2*prec_un*rec_un/(prec_un+rec_un) if (prec_un+rec_un) else 0
+
+# confusion: CN0 ∩ DD (intersection) vs LiDAR — high-precision subset
+tp_in = sum(1 for r in out_rows if r['nlos_inter'] and r['nlos_lidar'])
+fp_in = sum(1 for r in out_rows if r['nlos_inter'] and not r['nlos_lidar'])
+fn_in = sum(1 for r in out_rows if not r['nlos_inter'] and r['nlos_lidar'])
+tn_in = sum(1 for r in out_rows if not r['nlos_inter'] and not r['nlos_lidar'])
+prec_in = tp_in/(tp_in+fp_in) if (tp_in+fp_in) else 0
+rec_in  = tp_in/(tp_in+fn_in) if (tp_in+fn_in) else 0
+f1_in   = 2*prec_in*rec_in/(prec_in+rec_in) if (prec_in+rec_in) else 0
 
 print(f'\n=== Confusion matrices (vs LiDAR ground truth) ===')
-print(f'  CN0  (thresh={args.cn0_thresh}dB): '
+print( '  NOTE: union/inter use ONLY CN0+DD (LiDAR excluded from the vote) '
+       'to avoid GT leakage.')
+print(f'  CN0      (deficit>{args.cn0_thresh}dB): '
       f'TP={tp_cl} FP={fp_cl} FN={fn_cl} TN={tn_cl}  '
       f'Prec={prec_cl:.3f} Rec={rec_cl:.3f} F1={f1_cl:.3f}')
-print(f'  DD   (thresh=5m):            '
+print(f'  DD       (|resid|>5m):     '
       f'TP={tp_dl} FP={fp_dl} FN={fn_dl} TN={tn_dl}  '
       f'Prec={prec_dl:.3f} Rec={rec_dl:.3f} F1={f1_dl:.3f}')
-print(f'  Any2 (CN0 OR DD >=2/3):      '
-      f'TP={tp_a2} FP={fp_a2} FN={fn_a2} TN={tn_a2}  '
-      f'Prec={prec_a2:.3f} Rec={rec_a2:.3f} F1={f1_a2:.3f}')
+print(f'  CN0 ∪ DD (union, hi-rec):  '
+      f'TP={tp_un} FP={fp_un} FN={fn_un} TN={tn_un}  '
+      f'Prec={prec_un:.3f} Rec={rec_un:.3f} F1={f1_un:.3f}')
+print(f'  CN0 ∩ DD (inter, hi-prec): '
+      f'TP={tp_in} FP={fp_in} FN={fn_in} TN={tn_in}  '
+      f'Prec={prec_in:.3f} Rec={rec_in:.3f} F1={f1_in:.3f}')
 
 # overlap: CN0 AND DD
 both = sum(1 for r in out_rows if r['nlos_cn0'] and r['nlos_dd'])
@@ -399,11 +420,11 @@ imgs['hist'] = fig_to_b64(fig)
 
 # Fig 3: precision-recall comparison bar
 fig, axes = plt.subplots(1, 3, figsize=(11, 4), sharey=False)
-methods = ['CN0', 'DD (5m)', 'Any-2']
+methods = ['CN0', 'DD (5m)', 'CN0∪DD']
 metrics_data = {
-    'Precision': [prec_cl, prec_dl, prec_a2],
-    'Recall':    [rec_cl,  rec_dl,  rec_a2],
-    'F1':        [f1_cl,   f1_dl,   f1_a2],
+    'Precision': [prec_cl, prec_dl, prec_un],
+    'Recall':    [rec_cl,  rec_dl,  rec_un],
+    'F1':        [f1_cl,   f1_dl,   f1_un],
 }
 colors_m = ['#FF9800', '#2196F3', '#9C27B0']
 for ax, (mname, vals) in zip(axes, metrics_data.items()):
@@ -505,16 +526,21 @@ Deficit &gt; {args.cn0_thresh}&nbsp;dB-Hz is flagged as NLOS.
 CN0-flagged: <b>{n_cn0}</b> ({pct(n_cn0)}) &nbsp;|&nbsp;
 DD-flagged: {n_dd} ({pct(n_dd)}) &nbsp;|&nbsp;
 LiDAR: {n_lidar} ({pct(n_lidar)}) &nbsp;|&nbsp;
-Any-2 consensus: <b>{n_any2}</b> ({pct(n_any2)})<br><br>
+CN0&cup;DD: <b>{n_union}</b> ({pct(n_union)})<br><br>
 <table style="width:auto">
 <tr><th>Method</th><th>Precision</th><th>Recall</th><th>F1</th></tr>
 <tr><td>CN0 (deficit&gt;{args.cn0_thresh}dB)</td>
     <td>{prec_cl:.3f}</td><td>{rec_cl:.3f}</td><td>{f1_cl:.3f}</td></tr>
 <tr><td>DD (|resid|&gt;5m)</td>
     <td>{prec_dl:.3f}</td><td>{rec_dl:.3f}</td><td>{f1_dl:.3f}</td></tr>
-<tr><td>Any-2 of (CN0, DD, LiDAR)</td>
-    <td>{prec_a2:.3f}</td><td>{rec_a2:.3f}</td><td>{f1_a2:.3f}</td></tr>
+<tr><td><b>CN0 &cup; DD</b> (union, high recall)</td>
+    <td>{prec_un:.3f}</td><td>{rec_un:.3f}</td><td>{f1_un:.3f}</td></tr>
+<tr><td>CN0 &cap; DD (intersection, high precision)</td>
+    <td>{prec_in:.3f}</td><td>{rec_in:.3f}</td><td>{f1_in:.3f}</td></tr>
 </table>
+<p style="font-size:.85em;color:#666;margin:6px 0 0">
+Union/intersection use only the two ground-truth-independent detectors (CN0, DD);
+LiDAR is held out as evaluation truth to avoid circular leakage.</p>
 </div>
 
 <h2>1. C/N0 vs Elevation (LiDAR labels)</h2>

@@ -71,6 +71,9 @@ ap.add_argument('--out_csv',    default='/root/spp_fused_results.csv')
 ap.add_argument('--out_html',   default='/root/spp_fused_report.html')
 ap.add_argument('--min_elev',   type=float, default=10.0)
 ap.add_argument('--gt_tol',     type=float, default=10.0)
+ap.add_argument('--dd_thresh',  type=float, default=5.0,
+                help='|dd_resid| threshold (m) to flag DD-NLOS; Step 7e found '
+                     '5m optimal (the nlos_dd column in the file is fixed at 30m)')
 ap.add_argument('--cn0_dw',     type=float, default=0.3,
                 help='weight factor for CN0-only NLOS satellites (default 0.3)')
 args = ap.parse_args()
@@ -232,7 +235,7 @@ MODES = ('baseline', 'dd_corr', 'cn0_dw', 'fused')
 
 # ── main loop ──────────────────────────────────────────────────────────────
 print(f'\nRunning SPP ({len(MODES)} modes, min_elev={args.min_elev}°, '
-      f'cn0_dw={args.cn0_dw})...')
+      f'dd_thresh={args.dd_thresh}m, cn0_dw={args.cn0_dw})...')
 results   = []
 no_gt     = 0
 
@@ -284,8 +287,10 @@ for ep_i, epoch in enumerate(obs_epochs):
         dd_info  = dd_map.get((rinex_t_key, sat_id))
         cn0_info = cn0_map.get((rinex_t_key, sat_id))
 
-        nlos_dd  = int(dd_info['nlos_dd'])   if (dd_info  and sys_char == 'G') else 0
         dd_resid = float(dd_info['dd_resid']) if (dd_info  and sys_char == 'G') else 0.0
+        # Flag DD-NLOS directly from |dd_resid| (Step 7e: 5m beats the file's 30m column)
+        nlos_dd  = 1 if (dd_info and sys_char == 'G'
+                         and abs(dd_resid) > args.dd_thresh) else 0
         nlos_cn0 = int(cn0_info['nlos_cn0']) if (cn0_info and sys_char == 'G') else 0
 
         # cn0-only: C/N0 says NLOS but DD does NOT (so no residual available to correct)

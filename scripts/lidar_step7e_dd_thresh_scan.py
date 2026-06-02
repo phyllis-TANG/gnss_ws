@@ -360,7 +360,7 @@ ax1.legend(lines1+lines2, lab1+lab2, loc='upper right', fontsize=8)
 ax1.grid(True, alpha=0.3)
 img_tradeoff = fig_to_b64(fig)
 
-# Fig 2: Δ-metrics vs threshold
+# Fig 2: delta-metrics vs threshold
 fig, ax = plt.subplots(figsize=(10, 4))
 delta_means = [r['delta_mean'] for r in scan_results]
 delta_rmss  = [r['delta_rms']  for r in scan_results]
@@ -379,9 +379,8 @@ ax.set_title('Improvement over Baseline by Threshold  (negative = better)')
 ax.legend(); ax.grid(True, alpha=0.3)
 img_delta = fig_to_b64(fig)
 
-# Fig 3: CDF comparison (baseline + best + a few others)
-cdf_thresholds = [5, 10, best_mean['thresh'], 30, 100]
-cdf_thresholds = sorted(set(cdf_thresholds))
+# Fig 3: CDF comparison
+cdf_thresholds = sorted(set([5, 10, best_mean['thresh'], 30, 100]))
 cmap = plt.get_cmap('tab10')
 fig, ax = plt.subplots(figsize=(9, 5))
 bl_sorted = sorted(baseline_errs)

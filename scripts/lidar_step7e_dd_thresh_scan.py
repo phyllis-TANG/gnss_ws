@@ -407,9 +407,10 @@ def fmt_delta(v):
 
 rows_html = ''
 for r in scan_results:
-    best_mark = ' ★' if r['thresh'] == best_mean['thresh'] else ''
+    best_mark  = ' ★' if r['thresh'] == best_mean['thresh'] else ''
+    row_style  = '  style="background:#e8f5e9"' if r['thresh'] == best_mean['thresh'] else ''
     rows_html += (
-        f'<tr{"  style=\"background:#e8f5e9\"" if r["thresh"]==best_mean["thresh"] else ""}>'
+        f'<tr{row_style}>'
         f'<td><b>{r["thresh"]}m{best_mark}</b></td>'
         f'<td>{r["n_corrected"]} ({r["corr_per_epoch"]:.1f}/ep)</td>'
         f'<td>{r["mean"]:.2f}</td><td>{r["rms"]:.2f}</td>'

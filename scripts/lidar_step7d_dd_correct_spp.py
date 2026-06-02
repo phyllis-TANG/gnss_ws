@@ -38,7 +38,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# ── rinex_utils path ──────────────────────────────────────────────────
+# ── rinex_utils path ───────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 for _p in [
     '/root/gnss_ws/src/PSRI-73-2309-PR-Dev-main/rospak/src/del2AINLOS/scripts',
@@ -76,7 +76,7 @@ ap.add_argument('--gt_tol',    type=float, default=10.0)
 ap.add_argument('--dw_factor', type=float, default=0.3, help='weight factor for dd_corr_dw mode')
 args = ap.parse_args()
 
-# ── helpers ───────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────
 def load_nav(path, prefix):
     try:
         raw = read_rinex_nav(path)
@@ -111,7 +111,7 @@ def ecef_to_enu(ecef, ref_ecef, ref_lat, ref_lon):
 def dms_to_deg(d, m, s):
     return float(d) + float(m)/60 + float(s)/3600
 
-# ── WLS SPP solver ────────────────────────────────────────────────────
+# ── WLS SPP solver ───────────────────────────────────────────────
 def wls_spp_multi(sats_info, x0_ecef, min_sats=4, max_iter=10):
     active = [s for s in sats_info if s['weight'] > 0]
     if not active:
@@ -158,7 +158,7 @@ def wls_spp_multi(sats_info, x0_ecef, min_sats=4, max_iter=10):
 
     return x[:3], {sys: float(x[col]) for sys, col in clk_col.items()}, pdop
 
-# ── load DD labels (with dd_resid) ────────────────────────────────────
+# ── load DD labels (with dd_resid) ────────────────────────────────
 print(f'Loading DD labels: {args.dd_labels}')
 dd_labels = {}
 with open(args.dd_labels) as f:
@@ -172,7 +172,7 @@ with open(args.dd_labels) as f:
 n_dd = sum(1 for v in dd_labels.values() if v['nlos_dd'] and v['sys']=='G')
 print(f'  {len(dd_labels)} records  GPS-DD-NLOS={n_dd}')
 
-# ── load GT ───────────────────────────────────────────────────────────
+# ── load GT ───────────────────────────────────────────────────
 print(f'Loading GT: {args.gt}')
 gt_times, gt_lats, gt_lons, gt_alts = [], [], [], []
 with open(args.gt) as f:
@@ -207,7 +207,7 @@ def match_gt(utc_t):
     return (gt_lats[idx], gt_lons[idx], gt_alts[idx]) \
            if abs(gt_times[idx]-utc_t) <= args.gt_tol else None
 
-# ── load nav + obs ────────────────────────────────────────────────────
+# ── load nav + obs ────────────────────────────────────────────────
 print('Loading navigation messages...')
 ephem = {}
 ephem.update(load_nav(args.nav_gps, 'G'))
@@ -223,7 +223,7 @@ x0_ecef = np.array(llh_to_ecef(22.3198, 114.2095, 20.0))
 
 MODES = ('baseline', 'gps_dd_excl', 'dd_corr', 'dd_corr_dw')
 
-# ── main processing loop ──────────────────────────────────────────────
+# ── main processing loop ────────────────────────────────────────────────
 print(f'\nRunning SPP (4 modes, min_elev={args.min_elev} deg, dw_factor={args.dw_factor})...')
 results = []
 no_gt   = 0
@@ -352,7 +352,7 @@ for ep_i, epoch in enumerate(obs_epochs):
 print(f'\nDone: {len(results)} valid epochs  (no_gt={no_gt})  '
       f'total DD corrections applied: {corr_applied}')
 
-# ── statistics ────────────────────────────────────────────────────────
+# ── statistics ────────────────────────────────────────────────────
 def stats(vals):
     v = [x for x in vals if x is not None]
     if not v:
@@ -374,7 +374,7 @@ for m in MODES:
     print(f'  {m:<16}  {s["n"]:4d}  {s["mean"]:7.2f}m  {s["rms"]:7.2f}m  '
           f'{s["p50"]:7.2f}m  {s["p95"]:7.2f}m{diff}')
 
-# ── save CSV ──────────────────────────────────────────────────────────
+# ── save CSV ──────────────────────────────────────────────────────
 COLS = ['utc_t', 'n_total', 'n_dd_nlos'] + \
        [f'{m}_{k}' for m in MODES for k in ('err_h', 'err_v', 'err_3d', 'pdop', 'n_used')]
 with open(args.out_csv, 'w', newline='') as f:
@@ -382,7 +382,7 @@ with open(args.out_csv, 'w', newline='') as f:
     w.writeheader(); w.writerows(results)
 print(f'Saved: {args.out_csv}')
 
-# ── plots ─────────────────────────────────────────────────────────────
+# ── plots ───────────────────────────────────────────────────────────
 def fig_to_b64(fig):
     buf = io.BytesIO()
     fig.savefig(buf, format='png', dpi=110, bbox_inches='tight')

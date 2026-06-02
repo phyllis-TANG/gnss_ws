@@ -248,10 +248,11 @@ try:
             t_key = round(float(row.get('unix_t', row.get('rinex_t', 0))), 3)
             sid   = row.get('sat_id', '')
             lidar_map[(t_key, sid)] = {
-                'lidar_nlos': int(float(row.get('lidar_nlos', 0))),
-                'hit_dist_m': float(row.get('hit_dist_m', 0)),
-                'n_bounces':  int(float(row.get('n_bounces', 0))),
-                'normal_e':   float(row.get('normal_e', 0)),
+                'lidar_nlos':  int(float(row.get('lidar_nlos', 0))),
+                'hit_dist_m':  float(row.get('hit_dist_m', 0)),
+                'n_bounces':   int(float(row.get('n_bounces', 0))),
+                'azimuth_deg': float(row.get('azimuth_deg', 0)),
+                'normal_e':    float(row.get('normal_e', 0)),
                 'normal_n':   float(row.get('normal_n', 0)),
                 'normal_u':   float(row.get('normal_u', 0)),
                 'planarity':  float(row.get('planarity', 0)) if has_planarity else 0.0,
@@ -375,7 +376,7 @@ for ep_i, epoch in enumerate(obs_epochs):
         if lidar_info and lidar_info['lidar_nlos'] and lidar_info['n_bounces'] >= 1:
             d_hit = lidar_info['hit_dist_m']
             ne, nn, nu = lidar_info['normal_e'], lidar_info['normal_n'], lidar_info['normal_u']
-            az_r  = math.radians(float(obs.__dict__.get('azimuth', 0)))  # fallback
+            az_r  = math.radians(lidar_info['azimuth_deg'])
             el_r  = math.radians(elev)
             cos_el = math.cos(el_r)
             # incoming signal unit vector (receiver→satellite direction)

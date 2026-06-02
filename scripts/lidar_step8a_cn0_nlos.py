@@ -131,15 +131,23 @@ with open(args.dd_labels) as f:
 print(f'  {len(dd_map)} GPS DD records')
 
 # ── load LiDAR 2-bounce labels ────────────────────────────────────────
+# LiDAR file columns: unix_t,utc_t,sat_id,sys,prn,elevation_deg,...,lidar_nlos,...
+# Time column is `unix_t` (GPS time, SAME scale as dd_labels' rinex_t).
+# NLOS flag column is `lidar_nlos` (1=NLOS). Only flag rows where it == 1.
 print(f'Loading LiDAR 2b labels: {args.nlos_2b}')
-lidar_map = {}   # (rinex_t_key, sat_id) -> 1
+lidar_map = {}   # (t_key, sat_id) -> 1   (only NLOS-flagged rows)
+n_lidar_rows = 0
 try:
     with open(args.nlos_2b) as f:
         for row in csv.DictReader(f):
-            t_key = round(float(row.get('rinex_t', row.get('timestamp', 0))), 3)
-            sid   = row.get('sat_id', row.get('prn', ''))
-            lidar_map[(t_key, sid)] = 1
-    print(f'  {len(lidar_map)} LiDAR NLOS records')
+            n_lidar_rows += 1
+            t_raw = row.get('unix_t') or row.get('rinex_t') or row.get('timestamp') or 0
+            t_key = round(float(t_raw), 3)
+            sid   = row.get('sat_id') or row.get('prn') or ''
+            flag  = int(float(row.get('lidar_nlos', row.get('nlos_lidar', 0))))
+            if flag == 1:
+                lidar_map[(t_key, sid)] = 1
+    print(f'  {n_lidar_rows} LiDAR rows read, {len(lidar_map)} flagged NLOS')
 except FileNotFoundError:
     print('  [WARN] LiDAR 2b file not found — LiDAR column will be all 0')
 

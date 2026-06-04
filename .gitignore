@@ -6,3 +6,7 @@ scripts/__pycache__/
 # Weekly report deliverable — kept in chat only, not uploaded to GitHub (per request)
 GNSS_LiDAR_RayTracing_Weekly_EN.pptx
 scripts/make_weekly_report_en.py
+
+# Progress report deliverable — chat only
+NLOS_Correction_Progress_Report.docx
+scripts/make_progress_report_docx.py

@@ -320,8 +320,8 @@ bins.forEach((b,i)=>{{
     bc.fillStyle = colors[i];
     bc.fillRect(x, Math.min(yTop,y0), barW, h);
     bc.fillStyle='#333'; bc.font='11px Arial'; bc.textAlign='center';
-    bc.fillText(`[${b.lo},${b.hi})`, x+barW/2, bH-10);
-    bc.fillText(`n=${b.n}`, x+barW/2, bH-25);
+    bc.fillText(`[${{b.lo}},${{b.hi}})`, x+barW/2, bH-10);
+    bc.fillText(`n=${{b.n}}`, x+barW/2, bH-25);
     bc.fillStyle='white'; bc.font='bold 12px Arial';
     bc.fillText(b.mean.toFixed(1), x+barW/2, Math.min(yTop,y0)+15);
 }});

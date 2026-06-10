@@ -87,8 +87,8 @@ print(f'  命中（<{args.radius}m）: {np.sum(~np.isnan(intensities)):,} / {len
 print(f'  耗时 {time.time()-t0:.1f}s')
 
 # ── 归一化：ρ_norm = I × R² / (η_ref × cos(α)) ──────────────────────────────
-hit_dist  = np.array([float(r['hit_dist_m'])    for r in rows], dtype=np.float64)
-incidence = np.array([float(r['incidence_deg']) for r in rows], dtype=np.float64)
+hit_dist  = np.array([float(r['hit_dist_m']) if r['hit_dist_m'] else np.nan for r in rows], dtype=np.float64)
+incidence = np.array([float(r['incidence_deg']) if r['incidence_deg'] else 45.0 for r in rows], dtype=np.float64)
 
 cos_alpha = np.cos(np.radians(incidence))
 cos_alpha = np.clip(cos_alpha, 0.05, 1.0)   # 避免除零（入射角接近 90°）

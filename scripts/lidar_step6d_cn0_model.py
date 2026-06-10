@@ -490,8 +490,8 @@ print(f'CSV:  {args.out_csv}')
 print(f'HTML: {args.out_html}')
 print(f'\n核心结论:')
 print(f'  Baseline R²   = {r2_base:.4f}  (仅 severity 均值)')
-print(f'  PhysLR  R²   = {r2_lr_te:.4f}  ({"+" if r2_lr_te>r2_base else ""}{r2_lr_te-r2_base:+.4f} vs baseline)')
-print(f'  RF      R²   = {r2_rf_te:.4f}  ({"+' if r2_rf_te>r2_base else ""}{r2_rf_te-r2_base:+.4f} vs baseline)')
+print(f'  PhysLR  R²   = {r2_lr_te:.4f}  ({r2_lr_te - r2_base:+.4f} vs baseline)')
+print(f'  RF      R²   = {r2_rf_te:.4f}  ({r2_rf_te - r2_base:+.4f} vs baseline)')
 print(f'\n物理系数符号验证:')
 for nm, coef, exp in zip(PHYS_FEAT_NAMES, lr.coef_, EXPECTED_SIGNS):
     ok = '✓ 符合' if coef * exp > 0 else '✗ 不符'

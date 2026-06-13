@@ -13,3 +13,7 @@ scripts/make_progress_report_docx.py
 NLOS_Correction_Progress_Report_zh.docx
 NLOS_Correction_Progress_Report_en.docx
 scripts/make_progress_report_bilingual.py
+
+# Reflectivity progress deck — chat only
+GNSS_LiDAR_Reflectivity_Progress_zh.pptx
+scripts/make_progress_ppt_zh.py

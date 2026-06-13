@@ -17,3 +17,5 @@ scripts/make_progress_report_bilingual.py
 # Reflectivity progress deck — chat only
 GNSS_LiDAR_Reflectivity_Progress_zh.pptx
 scripts/make_progress_ppt_zh.py
+GNSS_LiDAR_Reflectivity_Progress_EN.pptx
+scripts/make_progress_ppt_en.py

@@ -47,6 +47,8 @@ with open(args.data) as f:
         try:
             if r.get('rho_norm', '') == '' or r.get('cn0_drop', '') == '':
                 continue
+            if float(r['rho_norm']) <= 0:   # log(ρ) 需要 ρ>0
+                continue
             rho.append(float(r['rho_norm']))
             drop.append(float(r['cn0_drop']))
             elev.append(float(r['elevation']))

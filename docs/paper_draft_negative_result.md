@@ -394,15 +394,22 @@ than more mixed-driving data.
 
 ## 附录 B：待补充
 
-- [ ] 图1：SPP vs GT 轨迹与误差分布（已有 HTML 报告，导出为矢量图）
-- [ ] 图2：ρ_norm vs CN0_drop 分层散点（step6 系列）
-- [ ] 图3（核心A）：跨卫星 vs 星内去均值 vs 时序平滑 三者相关对比（step9a，
-      展示"真实但弱"的核心证据——星内显著、平滑增强）
-- [ ] 图4（核心B）：三种 CV 切分 AUC 对比柱状图（step8h，方法论泄漏图）
-- [ ] 图5：仰角 vs LiDAR 消融 M1/M2/M3（step8f，仰角混淆图）
+- [x] **图1（核心A）**：`docs/figures/fig1_within_satellite.pdf` — 跨卫星 vs 星内
+      去均值 vs 时序平滑 三估计量 |Spearman r| 对比（step9a）。展示"真实但弱"
+      的核心证据：星内显著(***)、平滑增强、R²≈1.4%。→ 论文 §4.5
+- [x] **图2（核心B）**：`docs/figures/fig2_cv_leakage.pdf` — 残差 LiDAR 模型在
+      三种 CV 切分下的 AUC（RF vs LogReg，含误差棒、chance 线）（step8h）。
+      随机→分组塌 0.215 的泄漏。→ 论文 §4.4 / §5.2
+- [x] **图3（仰角混淆）**：`docs/figures/fig3_elevation_confound.pdf` — (a) 单特征
+      AUC（step8e）；(b) M1/M2/M3 消融（step8f），M3≈M1。→ 论文 §4.3
+- [ ] 图4：SPP vs GT 轨迹与误差分布（已有 HTML 报告，导出为矢量图）
+- [ ] 图5：ρ_norm vs CN0_drop 分层散点（step6 系列）
 - [ ] 表：LiDAR 传感器型号/频率/外参来源
 - [ ] 相关工作引用补全（第2节）
 - [ ] η_ref 与反射率标定细节（3.2 节）
+
+> 图1–3 由 `scripts/make_paper_figures.py` 生成（Liberation Serif/Times 衬线字 +
+> 灰度填充 + 填充图案 + 误差棒，期刊风格）。重跑：`python3 scripts/make_paper_figures.py`
 
 > 注：本文档原名 `paper_draft_negative_result.md`，v0.2 后定位已从"纯阴性"转为
 > "真实但弱的正效应 + 方法论"，文件名暂保留以维持 git 历史连续性。

@@ -226,7 +226,46 @@ severity:     +2.411  理论(+)  ✓  mild < strong < severe
 
 ---
 
+## 二·补：决定性诊断线（step8c–8h，2026-06-26 更新）
+
+> **重要**：本节结论**取代**上面"二、核心科学发现"中第 3/5 条的乐观表述。
+> 经过一套逐层剥离混淆变量的诊断，最终结论是严谨的**阴性/边界结果**。
+
+### 背景：从 CN0 目标转向伪距域 NLOS
+CN0_drop 噪声（~6.4 dB）远大于材质信号（1–2 dB），且材质效应只在 GPS severe
+子集勉强显著。于是改用更强的目标变量——伪距域 NLOS 误差。
+
+### 诊断链条与结果
+
+| 步骤 | 测试 | 结果 |
+|------|------|------|
+| step8c | 单接收机伪距误差 | ❌ 城市峡谷钟差估计崩溃（402/657 历元失败，5th=−60m 非物理） |
+| step8d | 双差残差（HKSC 参考站）作干净 NLOS 真值 | dd_resid 5th=−9.1m（钟差解决）；**LiDAR几何NLOS vs DD实测 F1=0.27，83% 假阳**；dd~ΔL Spearman=−0.062 |
+| step8e | LiDAR 特征判别 DD-NLOS 的 AUC | AUC=0.906，但**仰角单特征就 0.840，RF 重要性 74.6%** |
+| step8f | 仰角 vs LiDAR 消融（M1/M2/M3） | **加 LiDAR 边际增量 ≈ 0**（M3−M1 = −0.002 RF / −0.005 GBT） |
+| step8g | 剥离仰角后残差判别力 | LiDAR 不是仰角代理（相关<0.03）；残差随机CV RF=0.748（**误导**） |
+| step8h | 分组CV 泄漏检验 | **按卫星分组 RF 塌回 0.533 ≈ 随机**；时间块 0.648±0.122（仍泄漏） |
+
+### 最终科学结论
+1. **单帧 LiDAR 反射率/几何特征，对伪距域 NLOS 无可泛化的独立判别力**——
+   在卫星仰角（已知、免费）之外贡献约为零。
+2. step8e 表面 AUC=0.906 全是**卫星几何（仰角）**；残差里的 0.748 是
+   **时序自相关泄漏**，按卫星分组后塌回 0.533。
+3. 材质→CN0 效应真实但仅限 GPS severe（r=−0.167，CI 排除0），过弱无法支撑通用模型。
+4. **方法论贡献**：揭示 GNSS 时序数据上随机 CV 的泄漏陷阱（AUC 虚高 ~0.2）。
+   旧 F1=0.985 分类器正是此陷阱 + 标签泄漏的受害者。
+
+### 方向决定（2026-06-26）
+用户拍板：**写边界/阴性论文**。草稿见 `docs/paper_draft_negative_result.md`。
+
+---
+
 ## 三、待完成计划
+
+> ⚠️ 下列"近期任务 A/B/C"是诊断前的旧计划，部分已被上节结论取代。
+> 任务 A（修复时序泄漏）已由 step8h 完成并得出阴性结论；
+> 任务 C 的乐观叙事已被 `paper_draft_negative_result.md` 的阴性叙事替换。
+> 当前实际待办见本节末尾"★ 当前实际待办"。
 
 ### 近期（约 1–2 周）
 
@@ -295,8 +334,17 @@ severity:     +2.411  理论(+)  ✓  mild < strong < severe
 | `lidar_step6c_rho_vs_cn0.py` | ρ_norm vs CN0_drop 相关性分析 | ✅ 完成 |
 | `lidar_step6d_cn0_model.py` | 多变量 CN0_drop 预测模型 v2 | ✅ 完成 |
 | `lidar_step7_multignss_spp.py` | 多星座 SPP + NLOS 排除/修正 | ✅ 完成 |
-| `lidar_step8_ml_nlos.py` | ML NLOS 分类器（含泄漏）| ⚠️ 需修复时序划分 |
-| `lidar_step8b_ml_nlos_temporal.py` | ML 分类器（时序划分）| 📋 待编写 |
+| `lidar_step8_ml_nlos.py` | ML NLOS 分类器（含泄漏）| ⚠️ 已证实为随机CV泄漏 |
+| `lidar_step6e_verify_material.py` | 反射率↔CN0 死活验证 | ✅ GPS r=−0.058 CI排除0 |
+| `lidar_step6f_multignss_rho_cn0.py` | 多星座 CN0_drop 数据构建 | ✅ 5438 匹配 |
+| `lidar_step6g_severe_per_constellation.py` | severe 逐星座交叉验证 | ✅ 仅GPS robust |
+| `lidar_step6h_beidou_orbit_check.py` | 北斗轨道混淆检验 | ✅ IGSO主导，不确定 |
+| `lidar_step8c_psr_error_material.py` | 单接收机伪距误差 | ❌ 钟差崩溃（失败案例） |
+| `lidar_step8d_dd_resid_material.py` | 双差残差 NLOS 真值 | ✅ F1=0.27 |
+| `lidar_step8e_lidar_discriminates_ddnlos.py` | LiDAR 判别 DD-NLOS AUC | ✅ 0.906（仰角主导） |
+| `lidar_step8f_lidar_vs_elevation_ablation.py` | 仰角 vs LiDAR 消融 | ✅ 增量≈0 |
+| `lidar_step8g_residualize_elevation.py` | 剥离仰角残差判别力 | ✅ 随机CV 0.748（误导） |
+| `lidar_step8h_grouped_cv_leakage.py` | 分组CV 泄漏检验 | ✅ 按卫星塌回 0.533 |
 
 ### 数据文件（容器 `/root/`）
 
@@ -318,6 +366,7 @@ severity:     +2.411  理论(+)  ✓  mild < strong < severe
 | `step7_8_nlos_correction_results.md` | NLOS 修正实验结果 |
 | `research_roadmap.md` | 研究路线图（早期版本）|
 | `experiment_progress_and_plan.md` | **本文档**：完整进展与计划 |
+| `paper_draft_negative_result.md` | **论文草稿**：阴性/边界结果 + CV泄漏方法论 |
 
 ---
 

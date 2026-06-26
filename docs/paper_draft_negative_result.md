@@ -1,8 +1,11 @@
-# Single-Epoch LiDAR Reflectance Features Do Not Generalizably Discriminate GNSS NLOS Pseudorange Errors Beyond Satellite Elevation
+# LiDAR Reflectance Carries a Real but Weak Signal of GNSS NLOS Pseudorange Error: A Within-Satellite Analysis and a Cross-Validation Leakage Caution
 
-**A Negative Result with a Cross-Validation Leakage Caution for GNSS–LiDAR Studies**
+**On the feasibility — and the measurement pitfalls — of LiDAR-reflectance-based GNSS signal-attenuation modeling in urban canyons**
 
-> 论文草稿 v0.1 — 所有数值取自本项目 UrbanNav-HK-Medium-Urban-1 实测结果（step6e/6f/6g/6h/8d/8e/8f/8g/8h）。
+> 论文草稿 v0.2 — 所有数值取自本项目 UrbanNav-HK-Medium-Urban-1 实测结果（step6e/6f/6g/6h/8d/8e/8f/8g/8h/9a）。
+> v0.2 改动：从"纯阴性"重构为"真实但弱的正效应 + 方法论"。核心新证据是 step9a 的
+> 星内去均值分析——控制卫星身份后，ρ_norm/ΔL 与实测误差的关联**真实存在**（p<0.001），
+> 只是效应过弱（R²≈1.4%）。
 > 标 `[TODO]` 处需补图或补文献。
 
 ---
@@ -10,49 +13,57 @@
 ## 摘要 / Abstract（中文）
 
 城市峡谷中非视距（NLOS）信号是 GNSS 定位误差的主因。近年大量工作尝试用车载
-LiDAR 提供的三维结构与反射率信息来预测、剔除或改正 NLOS 观测。本文以一个香港
-城市峡谷数据集（UrbanNav Medium-Urban-1，F9P 多星座接收机 + 同步 LiDAR）系统检验
-一个看似自然的命题：**单历元 LiDAR 反射率/几何特征能否独立判别 GNSS 伪距域 NLOS
-误差**。我们构建了归一化反射率 ρ_norm（含距离平方与入射角补偿）、基于香港 CORS
-参考站 HKSC 的双差残差作为干净的 NLOS 真值标签，并设计了一套逐层剥离混淆变量的
-诊断流程。结果表明：(1) 反射率与 C/N0 衰减仅在 GPS 严重遮挡子集中呈弱显著负相关
-（Spearman r=−0.167，95% CI 排除 0），多星座扩展后整体相关性消失；(2) LiDAR 几何
-遮挡标签与双差实测 NLOS 仅 F1=0.27 一致，83% 的 LiDAR-NLOS 卫星实测无伪距偏差；
-(3) 一个表面性能很高的分类器（AUC=0.906）其判别力几乎完全来自卫星仰角，加入
-LiDAR 特征的边际增益约为零；(4) 剥离仰角后残差 LiDAR 特征在随机交叉验证下仍显
-AUC=0.748，但这是**时序自相关泄漏**所致——在按卫星分组的交叉验证下塌回 0.533
-（≈随机）。我们因此得出严谨的阴性结论，并指出 GNSS–LiDAR/机器学习研究中一个
-普遍存在却少被报告的随机交叉验证泄漏陷阱。
+LiDAR 提供的三维结构与反射率信息来预测、剔除或改正 NLOS 观测，并隐含假设"材质
+反射率越强→信号衰减/伪距偏差越大"。本文以一个香港城市峡谷数据集（UrbanNav
+Medium-Urban-1，F9P 多星座接收机 + 同步 LiDAR）严格检验这一材质衰减假设，并量化
+其可用边界。我们构建了归一化反射率 ρ_norm（含距离平方与入射角补偿）、基于香港
+CORS 参考站 HKSC 的双差残差作为干净的 NLOS 真值标签，并设计了一套逐层剥离混淆
+变量的诊断流程。核心发现是一个**真实但弱**的效应：(1) 朴素的跨卫星单历元相关
+几乎为零，且极易被仰角与卫星身份混淆所污染；(2) 但在**星内去均值**分析中（控制
+卫星身份这一混淆），反射率/几何路径与实测伪距误差的关联**真实存在且显著**
+（ρ_norm: Spearman=−0.075，ΔL: −0.069，均 p<0.001；时序平滑后增至 −0.10～−0.12），
+在 GPS 严重遮挡子集中最强（r=−0.167，95% CI 排除 0）；(3) 然而效应量极小
+（R²≈1.4%），单次反射特征不足以支撑独立的伪距改正/定位改善模型。在方法层面，我们
+揭示并量化了两个普遍却少被报告的陷阱：随机交叉验证在 GNSS 时序上的**自相关泄漏**
+（残差 AUC 由按卫星分组的 0.533 虚高至随机划分的 0.748）；以及把卫星仰角误当作
+LiDAR 贡献的**几何混淆**（一个 AUC=0.906 的分类器其判别力几乎全部来自仰角）。
+我们据此给出材质衰减建模的可行性边界，并指出需要受控材质采集与传感器级反射率
+标定才能将这一真实信号提升至可用强度。
 
-**关键词**：GNSS NLOS、LiDAR 反射率、城市峡谷、双差、交叉验证泄漏、阴性结果
+**关键词**：GNSS NLOS、LiDAR 反射率、材质衰减、城市峡谷、双差、星内分析、交叉验证泄漏
 
 ## Abstract（English）
 
 Non-line-of-sight (NLOS) reception is the dominant source of GNSS positioning
 error in urban canyons. A growing body of work uses vehicle-borne LiDAR — its
 3-D structure and surface reflectance — to predict, exclude, or correct NLOS
-measurements. Using a Hong Kong urban-canyon dataset (UrbanNav Medium-Urban-1;
-u-blox F9P multi-constellation receiver with synchronized LiDAR), we rigorously
-test a seemingly natural hypothesis: **can single-epoch LiDAR reflectance and
-geometric features independently discriminate GNSS pseudorange-domain NLOS
-errors?** We construct a normalized reflectance ρ_norm (range² and
-incidence-angle compensated), derive clean NLOS truth labels from
+measurements, implicitly assuming that stronger surface reflectance implies
+greater signal attenuation / pseudorange bias. Using a Hong Kong urban-canyon
+dataset (UrbanNav Medium-Urban-1; u-blox F9P multi-constellation receiver with
+synchronized LiDAR), we rigorously test this material-attenuation hypothesis and
+quantify its usable boundary. We construct a normalized reflectance ρ_norm
+(range² and incidence-angle compensated), derive clean NLOS truth labels from
 double-difference (DD) residuals against the Hong Kong CORS reference station
 HKSC, and apply a diagnostic protocol that strips confounders layer by layer.
-We find: (1) reflectance correlates with C/N0 attenuation only weakly and only
-in the severely-occluded GPS subset (Spearman r=−0.167, 95% CI excludes 0),
-with the correlation vanishing once the pool is expanded to multiple
-constellations; (2) LiDAR geometric-occlusion labels agree with DD-measured
-NLOS at only F1=0.27, and 83% of LiDAR-flagged NLOS satellites show no measured
-pseudorange bias; (3) a classifier with high apparent performance (AUC=0.906)
-derives its discrimination almost entirely from satellite elevation, with the
-marginal gain from LiDAR features being essentially zero; (4) after
-residualizing elevation, LiDAR features still show AUC=0.748 under random
-cross-validation, but this is an artifact of **temporal autocorrelation
-leakage** — under satellite-grouped cross-validation it collapses to 0.533
-(≈chance). We therefore report a rigorous negative result and highlight a
-common but under-reported random-CV leakage pitfall in GNSS–LiDAR / machine
-learning studies.
+Our central finding is a **real but weak** effect: (1) the naive cross-satellite
+single-epoch correlation is near zero and is readily contaminated by elevation
+and satellite-identity confounds; (2) however, in a **within-satellite
+de-meaned** analysis that controls satellite identity, reflectance and geometric
+path length are genuinely and significantly associated with measured pseudorange
+error (ρ_norm: Spearman=−0.075; ΔL: −0.069; both p<0.001; rising to −0.10…−0.12
+after temporal smoothing), and the effect is strongest in the severely-occluded
+GPS subset (r=−0.167, 95% CI excludes 0); (3) yet the effect size is tiny
+(R²≈1.4%), so single-bounce reflectance features are insufficient to anchor a
+standalone pseudorange-correction / positioning-improvement model.
+Methodologically, we expose and quantify two common but under-reported pitfalls:
+**temporal autocorrelation leakage** in random cross-validation on GNSS time
+series (residual AUC inflated from 0.533 under satellite-grouped CV to 0.748
+under random splits), and a **geometric confound** in which satellite elevation
+is mistaken for a LiDAR contribution (an AUC=0.906 classifier derives its
+discrimination almost entirely from elevation). We thereby map the feasibility
+boundary of material-attenuation modeling and argue that controlled-material
+acquisition and sensor-level reflectance calibration are required to raise this
+real signal to usable strength.
 
 ---
 
@@ -69,22 +80,31 @@ learning studies.
   encodes this, it should predict which satellites are NLOS and by how much.
 - Gap / our question: most prior LiDAR-aided NLOS work uses **geometry** (ray
   tracing / shadow matching) and reports good classification scores. Far less
-  work isolates whether the **reflectance/material** signal carries *independent*
-  predictive information, and almost none audits the cross-validation protocol
-  for temporal leakage. We ask the narrow, falsifiable question above and answer
-  it honestly.
+  work isolates whether the **reflectance/material** signal carries genuine,
+  confound-free predictive information, quantifies *how strong* it is, or audits
+  the cross-validation protocol for temporal leakage. We ask whether the
+  material-attenuation hypothesis holds, measure the effect cleanly, and map its
+  usable boundary.
 - Contributions:
   1. A reproducible pipeline normalizing raw LiDAR intensity to a physically
      meaningful reflectance proxy ρ_norm and aligning it per-epoch-per-satellite
      with GNSS observables.
   2. A clean NLOS truth label from double-difference residuals (receiver and
      satellite clocks cancel) that avoids the urban-canyon clock-estimation
-     failure we document.
-  3. A layered diagnostic establishing that single-epoch LiDAR features provide
-     **no generalizable independent discrimination** of pseudorange NLOS beyond
-     satellite elevation.
-  4. A concrete demonstration and quantification of **random-CV leakage**
-     (AUC 0.748 → 0.533) — a methodological caution for the field.
+     failure we document, together with a **within-satellite de-meaned**
+     estimator that isolates the genuine physical signal from satellite-identity
+     confounding.
+  3. Evidence that the material-attenuation hypothesis is **real but weak**:
+     reflectance/geometry are significantly associated with measured pseudorange
+     error within a satellite's track (p<0.001), strongest under severe GPS
+     occlusion, amplified by temporal smoothing, but explaining only R²≈1.4% —
+     insufficient alone for pseudorange correction or positioning improvement.
+  4. Two concrete methodological cautions for the field: quantified **random-CV
+     leakage** (AUC 0.748 → 0.533 under satellite-grouped CV) and an
+     **elevation-as-LiDAR confound** (AUC 0.906 is essentially all elevation).
+  5. A characterization of the **acquisition design** (controlled-material,
+     calibrated-reflectance, multi-return) needed to raise the effect to usable
+     strength — i.e. why more mixed-driving data would not suffice.
 
 ## 2. Related Work
 
@@ -225,15 +245,49 @@ pure LiDAR residual (step8g/8h):
   or day.
 - 26 satellites, 283 sat×60 s blocks.
 
-> Takeaway: the apparent residual LiDAR signal does not generalize. There is no
-> satellite-independent LiDAR→NLOS mapping in single-epoch features on this
-> dataset.
+> Takeaway: the apparent *cross-satellite* residual signal does not generalize —
+> a satellite-grouped classifier is at chance. This refutes a satellite-agnostic
+> LiDAR→NLOS *classifier*, but does **not** by itself prove the physical effect
+> is absent: grouping by satellite removes both the leakage *and* any genuine
+> within-satellite signal. Section 4.5 isolates the latter.
+
+### 4.5 A real but weak within-satellite effect (the honest signal)
+The grouped-CV null (§4.4) and the physical hypothesis can be reconciled by
+asking a sharper question: *as a single satellite moves along its own track and
+its geometry/material sweep changes, does its measured error follow?* We
+de-mean ΔL, log(ρ_norm) and dd_resid **per satellite** (removing the
+satellite-identity confound that both leaked in §4.4 and diluted the
+cross-satellite pool) and pool the residuals (step9a; n=5126, 26 satellites):
+
+| Relationship | Cross-satellite (naive) | Within-satellite (de-meaned) | + temporal smoothing (5 epochs) |
+|---|---:|---:|---:|
+| dd_resid vs ΔL | −0.062 | **−0.069** (p<0.001) | **−0.118** (p<0.001) |
+| dd_resid vs log(ρ_norm) | −0.045 | **−0.075** (p<0.001) | **−0.101** (p<0.001) |
+
+- The within-satellite associations are small but **statistically unambiguous**
+  (p<0.001), and they *survive* the very de-confounding that collapsed the
+  classifier — so the material/geometry → error link is **real, not noise**.
+- **Temporal smoothing nearly doubles** the correlation (e.g. ΔL: 0.069 → 0.118),
+  confirming that per-epoch measurement noise masks part of a slowly-varying
+  physical signal, i.e. multi-epoch aggregation adds genuine value.
+- But the magnitude is tiny: even smoothed, r≈0.12 ⇒ **R²≈1.4%**. Material and
+  single-bounce geometry explain ~1–1.5% of measured pseudorange-error variance.
+- NLOS persistence is short: |dd_resid|>20 m runs have median length 2 epochs
+  (mean 4.8, max 63; 25% of runs ≥5 epochs); each satellite is NLOS only ~5% of
+  the time (median). Temporal models therefore have limited structure to exploit.
+
+> Takeaway: the material-attenuation hypothesis is **confirmed but weak**. The
+> effect is real and reproducible within a satellite's own track, strongest under
+> severe GPS occlusion (§4.1), and amplified by temporal aggregation — yet at
+> R²≈1.4% it is far too weak, in single-bounce vehicle data, to anchor a
+> standalone pseudorange-correction or positioning-improvement model.
 
 ## 5. Discussion
 
-### 5.1 Why single-epoch LiDAR fails here
+### 5.1 Why the effect is real but weak
 - Geometric occlusion is necessary but far from sufficient for a biased
-  pseudorange; receiver tracking often locks the direct/diffracted path.
+  pseudorange; receiver tracking often locks the direct/diffracted path, so most
+  blocked rays still yield a near-unbiased pseudorange (§4.2).
 - Reflectance encodes the *surface*, but the *excess path geometry* (which
   determines ΔL and hence the bias) is only weakly tied to surface material.
 - High-reflectivity specular surfaces (glass/metal) can produce coherent
@@ -242,6 +296,12 @@ pure LiDAR residual (step8g/8h):
   vs ρ pattern).
 - Modulation matters: Galileo E1 BOC is largely NLOS-immune in C/N0, so pooling
   constellations dilutes any material effect.
+- The within-satellite evidence (§4.5) shows these factors *attenuate* but do not
+  *erase* the material/geometry signal: it survives de-confounding and grows
+  under temporal smoothing, but the residual physical coupling is intrinsically
+  small in single-bounce vehicle data. The signal is genuine; it is the
+  single-bounce, uncalibrated-reflectance, mixed-geometry *measurement regime*
+  that keeps it at R²≈1.4%.
 
 ### 5.2 A cross-validation leakage caution (methodological contribution)
 GNSS measurements are strongly autocorrelated in time: a satellite tracked over
@@ -255,30 +315,64 @@ an earlier internal classifier reaching F1=0.985 was a victim of exactly this
 plus label leakage. [TODO: position relative to literature that may report
 random-split scores.]
 
-### 5.3 Limitations
+### 5.3 Why more of the same data will not help (effect size vs sample size)
+The limiting factor is **effect size, not statistical power**. With n≈5000 and
+p<0.001 the within-satellite signal is already unambiguous; additional
+UrbanNav-style mixed-driving routes would tighten confidence intervals but would
+not move r≈0.075–0.12, because each new route re-introduces the same confounds
+(mixed materials per epoch, uncalibrated intensity, single-bounce geometry,
+modulation-immune Galileo). Raising the effect to usable strength requires a
+**different acquisition design**, not a larger one:
+- **Controlled-material capture** — dwelling on, or slowly traversing,
+  large single-material façades (pure glass curtain wall vs. pure concrete vs.
+  metal) so material varies while geometry is held fixed, removing the
+  confounds that dilute R².
+- **Sensor-level reflectance calibration** — a LiDAR with a factory-calibrated
+  intensity/reflectance product rather than raw intensity, removing systematic
+  error in ρ_norm.
+- **Multi-return / full-waveform LiDAR** — to model multi-bounce paths rather
+  than only the first-hit surface.
+- **Paired RTK truth with/without correction** to directly quantify any
+  positioning gain.
+Whether the *clean* material effect is then strong enough for a usable model
+remains an open empirical question — but this is the only path to answering it.
+
+### 5.4 Limitations
 - A single 13-min route, one city, one receiver; results may differ on other
   geometries and with denser/longer LiDAR coverage.
 - BeiDou subset IGSO-dominated; BeiDou MEO undersampled (n=30 severe) — its null
   is inconclusive.
 - ρ_norm normalization uses simplified range/incidence compensation; sensor-level
-  reflectance calibration could sharpen the material proxy.
-- DD truth assumes the HKSC baseline reference is clean; residual reference-side
-  multipath is possible.
-- We test *single-epoch* features only; multi-epoch reflection-path / 2nd-order
-  reflection modeling is explicitly out of scope and is the natural next study.
+  reflectance calibration could sharpen the material proxy and is a plausible
+  reason the measured R² understates the true material coupling.
+- DD truth carries its own measurement noise (reference-side multipath at HKSC),
+  which dilutes any correlation — the true material↔error coupling may exceed the
+  observed r≈0.12.
+- We test *single-epoch* and lightly-smoothed multi-epoch features; explicit
+  multi-bounce / 2nd-order reflection-path modeling is out of scope and, given
+  §4.5, is unlikely to rescue *correction* on this data though it may aid
+  detection.
 
 ## 6. Conclusion
 
-On a representative Hong Kong urban-canyon dataset, single-epoch LiDAR
-reflectance and geometric features do **not** provide generalizable, independent
-discrimination of GNSS pseudorange-domain NLOS errors beyond what satellite
-elevation already supplies for free. A material→C/N0 attenuation effect exists
-but only under severe GPS occlusion and is too weak to anchor a general model.
-Apparent machine-learning success is attributable to satellite geometry and, in
-the residual, to temporal-autocorrelation cross-validation leakage that vanishes
-under satellite-grouped validation (AUC 0.748 → 0.533). We contribute a clean
-DD-based evaluation protocol, a falsification-style diagnostic, and a concrete
-caution against random cross-validation on autocorrelated GNSS time series.
+On a representative Hong Kong urban-canyon dataset we establish that LiDAR
+surface reflectance carries a **real but weak** signal of GNSS pseudorange-domain
+NLOS error. The naive cross-satellite correlation is near zero and is easily
+mistaken either for nothing or — through cross-validation leakage and an
+elevation confound — for a strong effect; both are artifacts. A leakage-free
+within-satellite analysis resolves the picture: reflectance and single-bounce
+geometry are genuinely associated with measured error (p<0.001), the association
+strengthens under temporal smoothing and is strongest under severe GPS
+occlusion, yet it explains only ≈1.4% of error variance and cannot, alone,
+anchor a pseudorange-correction or positioning-improvement model in single-bounce
+vehicle data. We contribute (i) confirmation that the material-attenuation
+hypothesis is correct in sign and real in effect, with a quantified usable
+boundary; (ii) a clean DD-based, within-satellite evaluation protocol; and (iii)
+two concrete methodological cautions — temporal-autocorrelation cross-validation
+leakage (AUC 0.748→0.533) and elevation-as-LiDAR confounding — that materially
+change how such studies should be reported. Realizing a usable model will require
+controlled-material acquisition and sensor-level reflectance calibration rather
+than more mixed-driving data.
 
 ---
 
@@ -296,13 +390,19 @@ caution against random cross-validation on autocorrelated GNSS time series.
 | `lidar_step8f_lidar_vs_elevation_ablation.py` | 仰角 vs LiDAR 消融 | 增量 ≈ 0 |
 | `lidar_step8g_residualize_elevation.py` | 剥离仰角的残差判别力 | 随机CV 0.748（误导） |
 | `lidar_step8h_grouped_cv_leakage.py` | 分组CV 泄漏检验 | 按卫星塌回 0.533 |
+| `lidar_step9a_within_sat_temporal_premise.py` | 星内去均值 + 时序平滑 + 持续性 | 星内 ρ↔dd=−0.075 p<0.001；平滑后 −0.10 |
 
 ## 附录 B：待补充
 
 - [ ] 图1：SPP vs GT 轨迹与误差分布（已有 HTML 报告，导出为矢量图）
 - [ ] 图2：ρ_norm vs CN0_drop 分层散点（step6 系列）
-- [ ] 图3：dd_resid vs ΔL 散点（step8d HTML）
-- [ ] 图4：三种 CV 切分 AUC 对比柱状图（step8h，本文核心图）
+- [ ] 图3（核心A）：跨卫星 vs 星内去均值 vs 时序平滑 三者相关对比（step9a，
+      展示"真实但弱"的核心证据——星内显著、平滑增强）
+- [ ] 图4（核心B）：三种 CV 切分 AUC 对比柱状图（step8h，方法论泄漏图）
+- [ ] 图5：仰角 vs LiDAR 消融 M1/M2/M3（step8f，仰角混淆图）
 - [ ] 表：LiDAR 传感器型号/频率/外参来源
 - [ ] 相关工作引用补全（第2节）
 - [ ] η_ref 与反射率标定细节（3.2 节）
+
+> 注：本文档原名 `paper_draft_negative_result.md`，v0.2 后定位已从"纯阴性"转为
+> "真实但弱的正效应 + 方法论"，文件名暂保留以维持 git 历史连续性。

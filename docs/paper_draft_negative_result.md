@@ -2,11 +2,12 @@
 
 **On the feasibility — and the measurement pitfalls — of LiDAR-reflectance-based GNSS signal-attenuation modeling in urban canyons**
 
-> 论文草稿 v0.2 — 所有数值取自本项目 UrbanNav-HK-Medium-Urban-1 实测结果（step6e/6f/6g/6h/8d/8e/8f/8g/8h/9a）。
+> 论文草稿 v0.3 — 所有数值取自本项目 UrbanNav-HK-Medium-Urban-1 实测结果（step6e/6f/6g/6h/8d/8e/8f/8g/8h/9a）。
 > v0.2 改动：从"纯阴性"重构为"真实但弱的正效应 + 方法论"。核心新证据是 step9a 的
 > 星内去均值分析——控制卫星身份后，ρ_norm/ΔL 与实测误差的关联**真实存在**（p<0.001），
 > 只是效应过弱（R²≈1.4%）。
-> 标 `[TODO]` 处需补图或补文献。
+> v0.3 改动：§2 Related Work 补全（五小节，含 DOI），版本标注更新。
+> 标 `[TODO]` 处需补图或补传感器参数细节。
 
 ---
 
@@ -108,14 +109,104 @@ real signal to usable strength.
 
 ## 2. Related Work
 
-[TODO: fill citations — group into]
-- 3-D map / ray-tracing NLOS exclusion (shadow matching, 3DMA-GNSS).
-- LiDAR / camera fisheye NLOS detection (sky segmentation).
-- Machine-learning NLOS classification from CN0/elevation/pseudorange features
-  (note: many report high AUC/F1; flag those using random train/test splits on
-  time-series epochs).
-- LiDAR reflectance/intensity calibration (range and incidence-angle
-  normalization) literature.
+### 2.1 Geometry-Based NLOS Exclusion: Shadow Matching and 3DMA-GNSS
+
+The dominant approach to urban NLOS mitigation uses 3-D city models to predict
+satellite visibility by ray-casting. Groves (2011, 2013) introduced *shadow
+matching* — positioning is constrained by whether each satellite is predicted
+blocked or visible in a building model [Groves, J. Navigation 64:372–391, 2011;
+ibid. IEEE Trans. Aerosp. Electron. Syst. 49:1956–1984, 2013]. The method was
+later generalized to 3D Mapping Aided GNSS (3DMA), which additionally corrects
+pseudoranges using predicted NLOS path excess [Groves & Adjrad, J. Navigation
+70:1009–1022, 2017; DOI 10.1017/S0373463317000509]. These works establish that
+satellite *geometry* (blocked vs. visible; approximate ΔL) can be inferred from a
+map. What they do not address is whether LiDAR surface *reflectance* adds
+information beyond geometry — the question this paper isolates.
+
+Hsu and colleagues have extended 3DMA to vehicle-borne LiDAR maps, using
+real-time ray-casting into live LiDAR point clouds for NLOS exclusion in Hong Kong
+urban canyons [Hsu et al., IEEE T-ITS 17:3506–3516, 2016; Hsu, Gu & Groves,
+IEEE T-ITS 17:1802–1817, 2016]. Ng, Zhang, Luo & Hsu (2021) further demonstrated
+multi-frequency (L1/L5) 3DMA-GNSS, showing that LiDAR-predicted NLOS/LOS
+classification improves both signal selection and pseudorange correction
+[NAVIGATION 68:727–749, 2021]; a companion study validated the approach with
+IEEE Sensors Journal metrics [Ng, Zhang & Hsu, IEEE Sensors J., 2021;
+DOI 10.1109/JSEN.2021.3083801]. These papers treat LiDAR as a geometric occlusion
+detector and demonstrate that *structural* information is useful. In contrast, our
+step8d result — F1 = 0.27, 83% false positive rate when comparing LiDAR-geometric
+NLOS flags to DD-measured pseudorange error — suggests that geometric NLOS
+detection does not imply pseudorange bias, and motivates the separate question of
+whether *reflectance* adds a material-attenuation signal.
+
+### 2.2 LiDAR- and Camera-Aided NLOS Detection
+
+Beyond geometric occlusion, several groups have incorporated LiDAR or fisheye
+camera sky views to classify NLOS satellites directly. Ozeki & Kubo (2022) use
+fisheye camera sky segmentation combined with random-forest classification of
+signal-level features (C/N0, Doppler, elevation) to detect NLOS, reporting
+improved positioning in urban scenarios [Frontiers in Robotics and AI 9:868608,
+2022; DOI 10.3389/frobt.2022.868608]. Li et al. (2023) survey deep-learning
+approaches that fuse LiDAR point clouds and GNSS observables for NLOS
+classification, including convolutional and attention architectures applied to
+multi-epoch signal sequences [Satellite Navigation 4:18, 2023;
+DOI 10.1186/s43020-023-00101-w].
+
+These classification studies share a common evaluation pattern: they report high
+AUC or F1 on a test split, and in several cases that split is drawn *randomly*
+from a time-series dataset — exactly the temporal autocorrelation leakage scenario
+we identify and quantify in §4.4. Grouped evaluation (e.g. by satellite or by
+time block) is rarely reported. Our step8h result — residual-LiDAR RF AUC drops
+from 0.748 (random K-fold) to 0.533 (satellite-grouped) — illustrates how much
+this protocol choice affects reported performance.
+
+### 2.3 NLOS Pseudorange Error Models
+
+A complementary line of work models the *magnitude* of NLOS pseudorange bias
+rather than only classifying it. Groves et al. and Adjrad & Groves (2018) derive
+expected NLOS path excess as a function of building geometry. Jiang & Groves
+(2014) parametrize the error distribution by elevation and signal strength.
+Suzuki & Kubo (2013) showed that combining C/N0 and Doppler with a particle filter
+can reject NLOS under motion. A key reference for NLOS pseudorange-error modeling
+is the GPS Solutions paper on computationally efficient NLOS correction using
+3-D maps and elevation-masked satellite geometry [GPS Solutions 22:35, 2018;
+DOI 10.1007/s10291-017-0667-9]. All these models depend on accurate NLOS
+*detection* and geometry; none isolates the contribution of surface *reflectance*.
+Our §4.1–4.5 results provide the first systematic, leakage-controlled quantification
+of how much reflectance adds in a mixed-urban driving dataset.
+
+### 2.4 LiDAR Intensity Normalization and Reflectance Calibration
+
+Raw LiDAR return intensity depends on range, incidence angle, and surface
+reflectance jointly. For intensity to serve as a material proxy, the range and
+geometry contributions must be removed. Höfle & Pfeifer (2007) provide the
+canonical treatment of LiDAR intensity correction, showing that a range² and
+cos(incidence angle) normalization accounts for the dominant radiometric factors
+for airborne full-waveform scanners [ISPRS J. Photogramm. Remote Sens.
+62:415–433, 2007]. Their framework — adapted to terrestrial/vehicle-borne scanners
+— underlies our ρ_norm = I · R² / (η_ref · cos α) formula (§3.2). The remaining
+systematic effects (sensor gain variation, cross-range fall-off, target geometry
+beyond a Lambertian approximation) are folded into η_ref and absorbed by median
+normalization; this is a limitation we discuss in §5.4.
+
+Kaasalainen et al. (2009) and Vain et al. (2009) further characterize
+target-dependent and atmospheric deviations in airborne LiDAR intensity, and
+Kashani et al. (2015) review calibration protocols for terrestrial scanners.
+Vehicle-borne multi-return scanners (such as the Velodyne HDL-32E used in the
+UrbanNav platform [Wen et al., ION GNSS+ 2020]) have per-channel gain variations
+that introduce per-ring intensity offsets not corrected by our range-angle
+normalization. This measurement noise is a plausible contributor to the
+R²≈1.4% ceiling we observe; sensor-level calibration is therefore the most
+actionable path to raising the material signal (§5.3).
+
+### 2.5 Dataset: UrbanNav
+
+This study uses the UrbanNav Medium-Urban-1 sequence (Hong Kong, 2021-05-17),
+part of the UrbanNav open-source benchmark introduced by Wen et al. (2020, 2021)
+[weisongwen/UrbanNavDataset; ION GNSS+ 2020]. The platform carries a u-blox F9P
+multi-constellation receiver and a Velodyne LiDAR (HDL-32E or VLP-32C), together
+with a tactical-grade IMU providing ground-truth RTK/INS trajectories. UrbanNav
+is the most widely used open benchmark for urban GNSS-LiDAR fusion and provides
+the DD reference architecture (HKSC CORS) we exploit in §3.4.
 
 ## 3. Data and Methods
 
@@ -437,7 +528,8 @@ than more mixed-driving data.
 - [ ] 图4：SPP vs GT 轨迹与误差分布（已有 HTML 报告，导出为矢量图）
 - [ ] 图5：ρ_norm vs CN0_drop 分层散点（step6 系列）
 - [ ] 表：LiDAR 传感器型号/频率/外参来源
-- [ ] 相关工作引用补全（第2节）
+- [x] 相关工作引用补全（第2节）— v0.3 草稿已写入 §2.1–2.5；DOI 已注明，部分引用
+      来自 deep-research 搜索阶段（限流前），需投稿前逐条核对期刊/卷/页
 - [ ] η_ref 与反射率标定细节（3.2 节）
 
 > 图1–3 由 `scripts/make_paper_figures.py` 生成（Liberation Serif/Times 衬线字 +

@@ -120,12 +120,23 @@ real signal to usable strength.
 ## 3. Data and Methods
 
 ### 3.1 Dataset
-- UrbanNav-HK-Medium-Urban-1, Hong Kong, 2021-05-17, ~13 min, 657 epochs.
-- Receiver: u-blox F9P, recording GPS (G), BeiDou (C), Galileo (E).
-- Reference truth: UrbanNav RTK/INS ground truth (787 points).
-- Reference station for DD: Hong Kong CORS **HKSC** (RINEX nav hksc137c.21n).
-- Synchronized LiDAR point cloud with per-return intensity. [TODO: sensor model,
-  rate, extrinsics source]
+- **Scene/time:** UrbanNav-HK-Medium-Urban-1, Hong Kong (≈22.32°N, 114.21°E),
+  2021-05-17 from 02:33 UTC, ~13 min, 657 GNSS epochs (~1 Hz).
+- **Receiver:** u-blox F9P, simultaneously recording GPS (G), BeiDou (C) and
+  Galileo (E); satellite indexing follows the gnss_comm convention
+  (G: PRN 1–32; C: 97+PRN; E: 59+PRN).
+- **Ground truth:** UrbanNav RTK/INS reference trajectory (787 points), matched
+  to GNSS epochs by nearest-time (≤5 s tolerance).
+- **Positioning baseline:** weighted least-squares single-point positioning (SPP)
+  on this dataset yields mean horizontal error 84.8 m, RMS 103.8 m and 95th
+  percentile 176.1 m vs. ground truth (621/635 epochs matched) — consistent with
+  the 50–200 m typical of GNSS-only SPP in dense Hong Kong canyons, and the
+  error budget this study seeks to explain.
+- **Reference station for DD:** Hong Kong CORS **HKSC** (broadcast nav
+  hksc137c.21n, day-of-year 137 = 2021-05-17), baseline a few km from the rover.
+- **LiDAR:** synchronized 3-D point cloud with per-return intensity, accumulated
+  into an ENU reflectance map (~8.3 M points) using the reference trajectory.
+  [TODO: confirm sensor model / rate / extrinsics source from UrbanNav spec.]
 
 ### 3.2 Normalized LiDAR reflectance ρ_norm
 Raw intensity I depends on range R, incidence angle α, and surface reflectance.
@@ -134,9 +145,10 @@ We compensate the dominant geometric factors:
   ρ_norm = I · R² / (η_ref · cos α)
 
 then median-normalize ρ_norm to 1.0 across the dataset. η_ref is a sensor
-reference constant. [TODO: state η_ref handling and any saturation clipping.]
-This yields a per-return material proxy approximately independent of range and
-local geometry.
+reference constant absorbed by the median normalization; non-physical returns
+(ρ_norm ≤ 0) are discarded. This yields a per-return material proxy approximately
+independent of range and local geometry. [TODO: state any intensity saturation
+clipping specific to the sensor.]
 
 ### 3.3 C/N0 attenuation metric
 For each constellation separately (G/C/E have different C/N0 baselines), we fit
@@ -225,6 +237,12 @@ LiDAR features (M3 − M1) is −0.002 (RF) / −0.005 (GBT) — **zero within n
 A high headline AUC (0.906) is entirely satellite geometry, which is known and
 free.
 
+![Figure 3](figures/fig3_elevation_confound.png)
+**Fig. 3.** Elevation confound. (a) Single-feature AUC for discriminating
+DD-measured NLOS: satellite elevation (0.840) dwarfs every LiDAR feature, all of
+which sit near chance. (b) Ablation: adding LiDAR features to elevation (M3) does
+not improve over elevation alone (M1); the marginal gain is ≈0.
+
 ### 4.4 The residual LiDAR signal is cross-validation leakage
 LiDAR features are *not* an elevation proxy (Spearman with elevation < 0.03;
 elevation explains R² ≈ 0.003 of each). Residualizing elevation and testing the
@@ -245,6 +263,13 @@ pure LiDAR residual (step8g/8h):
   or day.
 - 26 satellites, 283 sat×60 s blocks.
 
+![Figure 2](figures/fig2_cv_leakage.png)
+**Fig. 2.** Cross-validation leakage. The same residual-LiDAR model (elevation
+removed) evaluated under three CV schemes. Random K-fold reports AUC=0.748, but
+under leakage-free satellite-grouped CV it collapses to 0.533 (≈chance, dashed
+line) — the 0.215 gap is autocorrelation memorization. Logistic regression, less
+able to memorize, is near chance throughout. Error bars: ±1 SD across folds.
+
 > Takeaway: the apparent *cross-satellite* residual signal does not generalize —
 > a satellite-grouped classifier is at chance. This refutes a satellite-agnostic
 > LiDAR→NLOS *classifier*, but does **not** by itself prove the physical effect
@@ -263,6 +288,13 @@ cross-satellite pool) and pool the residuals (step9a; n=5126, 26 satellites):
 |---|---:|---:|---:|
 | dd_resid vs ΔL | −0.062 | **−0.069** (p<0.001) | **−0.118** (p<0.001) |
 | dd_resid vs log(ρ_norm) | −0.045 | **−0.075** (p<0.001) | **−0.101** (p<0.001) |
+
+![Figure 1](figures/fig1_within_satellite.png)
+**Fig. 1.** The real-but-weak material/geometry signal. |Spearman r| between
+LiDAR features and measured pseudorange error under three estimators. Removing
+the satellite-identity confound (within-satellite de-meaning) and then temporal
+smoothing both *increase* the correlation rather than erasing it (\*\*\*: p<0.001),
+yet even smoothed it stays at r≈0.12 (R²≈1.4%).
 
 - The within-satellite associations are small but **statistically unambiguous**
   (p<0.001), and they *survive* the very de-confounding that collapsed the

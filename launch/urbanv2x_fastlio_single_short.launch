@@ -4,8 +4,9 @@
     Safe, bounded UrbanV2X single-Velodyne mapping test.
 
     rosbag play is required: when the bounded playback exits, roslaunch sends
-    SIGINT to FAST-LIO so its pcd_save shutdown handler writes PCD/scans.pcd.
-    The caller must preserve any pre-existing scans.pcd before launching.
+    SIGINT to FAST-LIO. The corrected config saves PCD/scans_N.pcd chunks while
+    playback is running because this fork can hang in its final scans.pcd save.
+    The caller must preserve any pre-existing scans*.pcd before launching.
   -->
   <arg name="bag_file" default="/bags/urbanv2x_small_loop/small_loop.bag" />
   <arg name="config_file" default="/root/gnss_ws_scripts/config/urbanv2x_fastlio_single_corrected.yaml" />

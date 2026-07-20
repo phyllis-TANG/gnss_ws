@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Safe, bounded UrbanV2X single-Velodyne mapping test.
+
+    rosbag play is required: when the bounded playback exits, roslaunch sends
+    SIGINT to FAST-LIO so its pcd_save shutdown handler writes PCD/scans.pcd.
+    The caller must preserve any pre-existing scans.pcd before launching.
+  -->
+  <arg name="bag_file" default="/bags/urbanv2x_small_loop/small_loop.bag" />
+  <arg name="config_file" default="/root/gnss_ws_scripts/config/urbanv2x_fastlio_single_corrected.yaml" />
+  <arg name="start" default="0.0" />
+  <arg name="duration" default="30.0" />
+  <arg name="bag_rate" default="1.0" />
+  <arg name="output_bag" default="/root/urbanv2x_fastlio_short_outputs.bag" />
+  <arg name="rviz" default="false" />
+
+  <param name="/use_sim_time" value="true" />
+  <rosparam command="load" file="$(arg config_file)" />
+
+  <node pkg="fast_lio_multi" type="fast_lio_multi_node"
+        name="laserMapping_multi" output="screen" />
+
+  <node pkg="rosbag" type="record" name="record_fastlio_outputs"
+        args="-O $(arg output_bag) /Odometry /path" output="screen" />
+
+  <node pkg="rosbag" type="play" name="play_urbanv2x_short"
+        args="--clock --delay 2.0 --rate $(arg bag_rate) --start $(arg start) --duration $(arg duration) $(arg bag_file) --topics /velodyne_points /imu/data"
+        output="screen" required="true" />
+
+  <group if="$(arg rviz)">
+    <env name="LIBGL_ALWAYS_SOFTWARE" value="1" />
+    <node pkg="rviz" type="rviz" name="rviz" launch-prefix="nice"
+          args="-d $(find fast_lio_multi)/rviz/rviz_fast_lio.rviz" />
+  </group>
+</launch>

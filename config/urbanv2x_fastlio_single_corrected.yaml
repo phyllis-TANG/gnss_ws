@@ -1,0 +1,65 @@
+# UrbanV2X top Velodyne VLP/HDL-32E, single-LiDAR FAST-LIO test.
+#
+# The refined calibration file states a homogeneous transformation from
+# LiDAR to IMU.  FAST-LIO applies
+#   p_imu = offset_R_L_I * p_lidar + offset_T_L_I
+# so the matrix below is copied directly from the refinement result; it is not
+# inverted.  The older fast_lio_multi/config/urbannavv2x_single.yaml contains
+# the inverse matrix and must not be used for this test.
+
+common:
+    async_debug: false
+    multi_lidar: false
+    publish_tf_results: false
+    max_iteration: 3
+    map_frame: "map"
+    lid_topic: "/velodyne_points"
+    lid_topic2: "/lidar_points"
+    imu_topic: "/imu/data"
+
+preprocess:
+    filter_size_surf: 0.5
+    point_filter_num: 4
+    point_filter_num2: 4
+    lidar_type: 2
+    lidar_type2: 2
+    scan_line: 32
+    scan_line2: 32
+    scan_rate: 10
+    scan_rate2: 10
+    timestamp_unit: 0
+    timestamp_unit2: 0
+    blind: 1.0
+    blind2: 1.0
+
+mapping:
+    cube_side_length: 1000.0
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    det_range: 150.0
+    extrinsic_est_en: false
+    extrinsic_imu_to_lidars: false
+
+    # Refined homogeneous transformation: LiDAR -> Xsens IMU.
+    extrinsic_T: [-0.001595, -0.022252, 0.157731]
+    extrinsic_R: [0.999394, -0.034800, 0.000902,
+                  0.034802, 0.999391, -0.002629,
+                  -0.000810, 0.002659, 0.999996]
+
+    # Unused in single-LiDAR mode; retained because this fork declares them.
+    extrinsic_T_L2_wrt_L1: [0.0, 0.0, 0.0]
+    extrinsic_R_L2_wrt_L1: [1.0, 0.0, 0.0,
+                             0.0, 1.0, 0.0,
+                             0.0, 0.0, 1.0]
+
+publish:
+    path_en: true
+    scan_publish_en: true
+    dense_publish_en: false
+    scan_bodyframe_pub_en: true
+
+pcd_save:
+    pcd_save_en: true
+    interval: -1

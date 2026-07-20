@@ -62,4 +62,6 @@ publish:
 
 pcd_save:
     pcd_save_en: true
-    interval: -1
+    # Save complete chunks while playback is running. This avoids relying on
+    # this FAST-LIO fork's hanging final scans.pcd save during roslaunch exit.
+    interval: 50

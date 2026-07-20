@@ -40,6 +40,7 @@ class FastlioConfigTest(unittest.TestCase):
         self.assertIn('imu_topic: "/imu/data"', text)
         self.assertIn("timestamp_unit: 0", text)
         self.assertIn("pcd_save_en: true", text)
+        self.assertIn("interval: 50", text)
 
 
 class FastlioLaunchTest(unittest.TestCase):

@@ -76,6 +76,31 @@ class AlignmentTest(unittest.TestCase):
         self.assertLess(result["translation_error_m"]["max"], 1e-12)
         self.assertLess(result["rotation_error_deg"]["max"], 1e-9)
 
+    def test_world_translation_rpe_does_not_confuse_constant_body_axis_offset(self):
+        times = np.arange(0.0, 4.0, 1.0)
+        positions = np.column_stack([times, np.zeros_like(times), np.zeros_like(times)])
+        estimated_rotations = np.asarray([np.eye(3) for _ in times])
+        body_axis_offset = rotation_z(math.pi / 2.0)
+        gt_rotations = np.asarray([body_axis_offset for _ in times])
+
+        result = MODULE.compute_rpe(
+            times, positions, estimated_rotations,
+            positions, gt_rotations,
+            horizon=1.0, tolerance=0.01,
+        )
+
+        self.assertLess(result["translation_error_m"]["max"], 1e-12)
+        self.assertGreater(result["body_frame_translation_error_m"]["median"], 1.0)
+
+    def test_constant_body_axis_rotation_is_recovered(self):
+        base = np.asarray([
+            rotation_z(0.1 * index) for index in range(6)
+        ])
+        expected = rotation_z(math.radians(90.0))
+        target = np.asarray([rotation @ expected for rotation in base])
+        estimated = MODULE.estimate_body_axis_rotation(base, target)
+        np.testing.assert_allclose(estimated, expected, atol=1e-12)
+
 
 class ConventionTest(unittest.TestCase):
     def test_navigation_heading_rotates_flu_forward_into_enu(self):

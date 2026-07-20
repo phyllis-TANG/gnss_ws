@@ -216,6 +216,29 @@ def rotation_angle_degrees(rotation):
     return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
 
 
+def project_to_rotation(matrix):
+    """Project a 3 x 3 matrix onto SO(3) with an SVD."""
+    u, _, vt = np.linalg.svd(np.asarray(matrix, dtype=np.float64))
+    correction = np.eye(3)
+    correction[-1, -1] = 1.0 if np.linalg.det(u @ vt) >= 0.0 else -1.0
+    return u @ correction @ vt
+
+
+def estimate_body_axis_rotation(estimated_rotations, gt_rotations):
+    """Estimate constant C in R_gt ~= R_est @ C.
+
+    FAST-LIO odometry and UrbanV2X GT can refer to different child-frame axis
+    conventions even after their world frames have been aligned. Averaging
+    R_est.T @ R_gt isolates that constant right-side/body-axis rotation.
+    """
+    if len(estimated_rotations) != len(gt_rotations) or not len(gt_rotations):
+        raise ValueError("Orientation arrays must have equal non-zero length")
+    accumulator = np.zeros((3, 3), dtype=np.float64)
+    for estimated, ground_truth in zip(estimated_rotations, gt_rotations):
+        accumulator += estimated.T @ ground_truth
+    return project_to_rotation(accumulator)
+
+
 def nearest_residual(sorted_times, epoch):
     index = bisect.bisect_left(sorted_times, epoch)
     candidates = []
@@ -237,6 +260,7 @@ def compute_rpe(times, estimated_positions, estimated_rotations,
                 gt_positions, gt_rotations, horizon, tolerance):
     times = np.asarray(times, dtype=np.float64)
     translation_errors = []
+    body_translation_errors = []
     rotation_errors = []
     actual_horizons = []
     used_pairs = set()
@@ -252,14 +276,25 @@ def compute_rpe(times, estimated_positions, estimated_rotations,
             continue
         used_pairs.add((start, end))
 
-        estimated_delta = (
+        estimated_delta_world = estimated_positions[end] - estimated_positions[start]
+        gt_delta_world = gt_positions[end] - gt_positions[start]
+        # This primary translation metric is independent of child-frame axis
+        # naming. It measures disagreement in ENU displacement over the
+        # requested horizon after the one global map-frame alignment.
+        translation_errors.append(float(np.linalg.norm(
+            estimated_delta_world - gt_delta_world
+        )))
+
+        estimated_delta_body = (
             estimated_rotations[start].T
-            @ (estimated_positions[end] - estimated_positions[start])
+            @ estimated_delta_world
         )
-        gt_delta = (
-            gt_rotations[start].T @ (gt_positions[end] - gt_positions[start])
+        gt_delta_body = (
+            gt_rotations[start].T @ gt_delta_world
         )
-        translation_errors.append(float(np.linalg.norm(estimated_delta - gt_delta)))
+        body_translation_errors.append(float(np.linalg.norm(
+            estimated_delta_body - gt_delta_body
+        )))
 
         estimated_relative_rotation = (
             estimated_rotations[start].T @ estimated_rotations[end]
@@ -274,6 +309,9 @@ def compute_rpe(times, estimated_positions, estimated_rotations,
         "pairs": len(translation_errors),
         "actual_horizon_s": describe(actual_horizons),
         "translation_error_m": describe(translation_errors, include_rmse=True),
+        "body_frame_translation_error_m": describe(
+            body_translation_errors, include_rmse=True
+        ),
         "rotation_error_deg": describe(rotation_errors, include_rmse=True),
     }
 
@@ -297,7 +335,8 @@ def error_trend(elapsed, errors):
 
 
 def write_csv(path, times, odom_positions, aligned_positions, gt_positions,
-              position_errors, rotation_errors, nearest_gt_dt, gt_quality):
+              position_errors, raw_rotation_errors, corrected_rotation_errors,
+              nearest_gt_dt, gt_quality):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
@@ -305,8 +344,8 @@ def write_csv(path, times, odom_positions, aligned_positions, gt_positions,
             "epoch", "elapsed_s", "odom_x", "odom_y", "odom_z",
             "aligned_e", "aligned_n", "aligned_u",
             "gt_e", "gt_n", "gt_u", "error_e", "error_n", "error_u",
-            "position_error_m", "rotation_error_deg", "nearest_gt_dt_s",
-            "gt_quality",
+            "position_error_m", "raw_rotation_error_deg",
+            "body_axis_corrected_rotation_error_deg", "nearest_gt_dt_s", "gt_quality",
         ])
         for index, epoch in enumerate(times):
             vector_error = aligned_positions[index] - gt_positions[index]
@@ -318,14 +357,15 @@ def write_csv(path, times, odom_positions, aligned_positions, gt_positions,
                 *("%.6f" % value for value in gt_positions[index]),
                 *("%.6f" % value for value in vector_error),
                 "%.6f" % position_errors[index],
-                "%.6f" % rotation_errors[index],
+                "%.6f" % raw_rotation_errors[index],
+                "%.6f" % corrected_rotation_errors[index],
                 "%.9f" % nearest_gt_dt[index],
                 int(gt_quality[index]),
             ])
 
 
 def write_plot(path, elapsed, aligned_positions, gt_positions,
-               position_errors, rotation_errors):
+               position_errors, corrected_rotation_errors):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -352,10 +392,10 @@ def write_plot(path, elapsed, aligned_positions, gt_positions,
     axes[1].set_title("ATE over time")
     axes[1].grid(True, alpha=0.3)
 
-    axes[2].plot(elapsed, rotation_errors, color="C2")
+    axes[2].plot(elapsed, corrected_rotation_errors, color="C2")
     axes[2].set_xlabel("Elapsed time [s]")
     axes[2].set_ylabel("Rotation error [deg]")
-    axes[2].set_title("Absolute orientation error")
+    axes[2].set_title("Body-axis-corrected orientation error")
     axes[2].grid(True, alpha=0.3)
     figure.tight_layout()
     figure.savefig(path, dpi=160)
@@ -405,8 +445,18 @@ def main():
         alignment_rotation @ rotation for rotation in odom_rotations
     ])
     position_errors = np.linalg.norm(aligned_positions - gt_positions, axis=1)
-    rotation_errors = np.asarray([
+    raw_rotation_errors = np.asarray([
         rotation_angle_degrees(gt_rotations[index].T @ aligned_rotations[index])
+        for index in range(len(times))
+    ])
+    body_axis_rotation = estimate_body_axis_rotation(
+        aligned_rotations, gt_rotations
+    )
+    corrected_rotations = np.asarray([
+        rotation @ body_axis_rotation for rotation in aligned_rotations
+    ])
+    corrected_rotation_errors = np.asarray([
+        rotation_angle_degrees(gt_rotations[index].T @ corrected_rotations[index])
         for index in range(len(times))
     ])
 
@@ -433,12 +483,15 @@ def main():
             raise ValueError("RPE horizons must be positive")
         key = ("%.3f" % horizon).rstrip("0").rstrip(".") + "s"
         rpe[key] = compute_rpe(
-            times, aligned_positions, aligned_rotations,
+            times, aligned_positions, corrected_rotations,
             gt_positions, gt_rotations, horizon, args.pair_tolerance,
         )
 
     ate = describe(position_errors, include_rmse=True)
-    absolute_rotation = describe(rotation_errors, include_rmse=True)
+    raw_absolute_rotation = describe(raw_rotation_errors, include_rmse=True)
+    corrected_absolute_rotation = describe(
+        corrected_rotation_errors, include_rmse=True
+    )
     elapsed = times - times[0]
     trend = error_trend(elapsed, position_errors)
     odom_length = trajectory_length(odom_positions)
@@ -449,7 +502,7 @@ def main():
         rpe.values(),
         key=lambda item: abs(item["requested_horizon_s"] - 1.0),
     ) if rpe else None
-    screening_checks = {
+    position_checks = {
         "odometry_inside_gt_ratio_ge_0_99": len(in_coverage) / len(odometry) >= 0.99,
         "nearest_gt_abs_dt_p95_le_0_01_s": percentile(abs(nearest_gt_dt), 0.95) <= 0.01,
         "ate_p95_le_project_threshold": ate["p95"] <= args.ate_p95_screen,
@@ -459,25 +512,31 @@ def main():
             and rpe_1s["pairs"] > 0
         ),
     }
-    if screening_checks["rpe_near_1s_available"]:
-        screening_checks["rpe_1s_translation_p95_le_project_threshold"] = (
+    orientation_checks = {}
+    if position_checks["rpe_near_1s_available"]:
+        position_checks["rpe_1s_translation_p95_le_project_threshold"] = (
             rpe_1s["translation_error_m"]["p95"]
             <= args.rpe1_translation_p95_screen
         )
-        screening_checks["rpe_1s_rotation_p95_le_project_threshold"] = (
+        orientation_checks["rpe_1s_rotation_p95_le_project_threshold"] = (
             rpe_1s["rotation_error_deg"]["p95"]
             <= args.rpe1_rotation_p95_screen
         )
-    screening_decision = (
-        "SCREEN_PASS" if all(screening_checks.values()) else "REVIEW"
-    )
+    position_pass = all(position_checks.values())
+    orientation_pass = bool(orientation_checks) and all(orientation_checks.values())
+    if position_pass and orientation_pass:
+        screening_decision = "SCREEN_PASS"
+    elif position_pass:
+        screening_decision = "POSITION_PASS_ORIENTATION_REVIEW"
+    else:
+        screening_decision = "REVIEW"
 
     plot_written = False
     plot_error = None
     if args.out_plot:
         plot_written, plot_error = write_plot(
             args.out_plot, elapsed, aligned_positions, gt_positions,
-            position_errors, rotation_errors,
+            position_errors, corrected_rotation_errors,
         )
 
     audit = {
@@ -511,12 +570,20 @@ def main():
             "odom_over_gt_path_length_ratio_diagnostic_only": path_length_ratio,
         },
         "ate_position_m": ate,
-        "absolute_rotation_error_deg": absolute_rotation,
+        "orientation_frame_audit": {
+            "estimated_constant_body_axis_rotation": body_axis_rotation.tolist(),
+            "estimated_constant_body_axis_rotation_angle_deg": (
+                rotation_angle_degrees(body_axis_rotation)
+            ),
+            "raw_absolute_rotation_error_deg": raw_absolute_rotation,
+            "after_constant_body_axis_alignment_error_deg": corrected_absolute_rotation,
+        },
         "position_error_trend": trend,
         "rpe": rpe,
         "screening": {
             "decision": screening_decision,
-            "checks": screening_checks,
+            "position_checks": position_checks,
+            "orientation_checks": orientation_checks,
             "thresholds_are_project_screening_not_field_standards": {
                 "ate_p95_m": args.ate_p95_screen,
                 "rpe_1s_translation_p95_m": args.rpe1_translation_p95_screen,
@@ -526,6 +593,8 @@ def main():
         "limitations": [
             "GT-to-Xsens lever arm is undocumented; rotating lever-arm residual may remain",
             "ATE is reported after one global rigid alignment and must be read with RPE",
+            "A constant body-axis rotation is estimated from the full segment; corrected "
+            "orientation metrics assess variation, not absolute mounting calibration",
             "This short-segment screen does not establish full-sequence loop consistency",
         ],
         "outputs": {
@@ -542,7 +611,8 @@ def main():
         handle.write("\n")
     write_csv(
         args.out_csv, times, odom_positions, aligned_positions, gt_positions,
-        position_errors, rotation_errors, nearest_gt_dt, gt_quality,
+        position_errors, raw_rotation_errors, corrected_rotation_errors,
+        nearest_gt_dt, gt_quality,
     )
 
     print("\n=== FAST-LIO vs GT trajectory audit ===")
@@ -561,20 +631,31 @@ def main():
         fmt(ate["median"]), fmt(ate["rmse"]),
         fmt(ate["p95"]), fmt(ate["max"]),
     ))
-    print("abs rotation med/p95/max:  %s / %s / %s deg" % (
-        fmt(absolute_rotation["median"]), fmt(absolute_rotation["p95"]),
-        fmt(absolute_rotation["max"]),
+    print("body-axis offset angle:    %s deg" % fmt(
+        rotation_angle_degrees(body_axis_rotation)
+    ))
+    print("raw abs rotation med/p95:  %s / %s deg" % (
+        fmt(raw_absolute_rotation["median"]), fmt(raw_absolute_rotation["p95"]),
+    ))
+    print("corrected rotation med/p95:%s / %s deg" % (
+        fmt(corrected_absolute_rotation["median"]),
+        fmt(corrected_absolute_rotation["p95"]),
     ))
     print("ATE trend slope:           %s m/s" % fmt(trend["linear_slope_m_s"], 6))
     for key, metrics in rpe.items():
-        print("RPE %s pairs=%d: trans p95=%s m, rot p95=%s deg" % (
+        print("RPE %s pairs=%d: world-trans p95=%s m, rot p95=%s deg" % (
             key, metrics["pairs"],
             fmt(metrics["translation_error_m"]["p95"]),
             fmt(metrics["rotation_error_deg"]["p95"]),
         ))
     print("screening decision:        %s" % screening_decision)
-    for name, passed in screening_checks.items():
-        print("  %s: %s" % ("PASS" if passed else "FAIL", name))
+    for group, checks in (
+        ("position", position_checks), ("orientation", orientation_checks)
+    ):
+        for name, passed in checks.items():
+            print("  %s [%s]: %s" % (
+                "PASS" if passed else "FAIL", group, name
+            ))
     print("CSV:   %s" % args.out_csv)
     print("Audit: %s" % args.audit)
     if args.out_plot:

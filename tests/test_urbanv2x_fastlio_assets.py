@@ -46,6 +46,12 @@ class FastlioConfigTest(unittest.TestCase):
 class FastlioLaunchTest(unittest.TestCase):
     def test_launch_is_bounded_and_stops_on_playback_exit(self):
         root = ET.parse(LAUNCH).getroot()
+        arguments = {item.attrib.get("name"): item for item in root.findall("arg")}
+        self.assertEqual(arguments["pcd_interval"].attrib.get("default"), "50")
+        parameters = {item.attrib.get("name"): item for item in root.findall("param")}
+        interval = parameters["/pcd_save/interval"]
+        self.assertEqual(interval.attrib.get("value"), "$(arg pcd_interval)")
+        self.assertEqual(interval.attrib.get("type"), "int")
         nodes = {node.attrib.get("name"): node for node in root.findall("node")}
         player = nodes["play_urbanv2x_short"]
         self.assertEqual(player.attrib.get("required"), "true")

@@ -14,10 +14,13 @@
   <arg name="duration" default="30.0" />
   <arg name="bag_rate" default="1.0" />
   <arg name="output_bag" default="/root/urbanv2x_fastlio_short_outputs.bag" />
+  <arg name="pcd_interval" default="50" />
   <arg name="rviz" default="false" />
 
   <param name="/use_sim_time" value="true" />
   <rosparam command="load" file="$(arg config_file)" />
+  <!-- Override the YAML default when testing per-scan runtime persistence. -->
+  <param name="/pcd_save/interval" value="$(arg pcd_interval)" type="int" />
 
   <node pkg="fast_lio_multi" type="fast_lio_multi_node"
         name="laserMapping_multi" output="screen" />

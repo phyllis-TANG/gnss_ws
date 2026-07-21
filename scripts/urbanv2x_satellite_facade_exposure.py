@@ -292,6 +292,9 @@ def aggregate_subset(candidates, scenario, tier_a_only=False):
 
 
 def aggregate_ray(ray, candidates, args):
+    direct_available = (
+        "surface_hit" in ray and ray.get("surface_hit") not in ("", None, "None")
+    )
     output = {
         "epoch_utc": ray["epoch_utc"],
         "sat_id": ray["sat_id"],
@@ -304,8 +307,9 @@ def aggregate_ray(ray, candidates, args):
         "receiver_e_m": number(ray, "receiver_e_m"),
         "receiver_n_m": number(ray, "receiver_n_m"),
         "receiver_u_m": number(ray, "receiver_u_m"),
-        "direct_surface_hit": int(is_true(ray, "surface_hit")),
-        "direct_patch_valid": int(is_true(ray, "patch_valid")),
+        "direct_surface_audit_available": int(direct_available),
+        "direct_surface_hit": int(is_true(ray, "surface_hit")) if direct_available else None,
+        "direct_patch_valid": int(is_true(ray, "patch_valid")) if direct_available else None,
         "plane_intersection_candidates": len(candidates),
         "unique_physical_facades": len(set(
             row["physical_facade_id"] for row in candidates

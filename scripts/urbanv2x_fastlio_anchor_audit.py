@@ -201,6 +201,15 @@ def transform_points(points, rotation, translation):
     return ((rotation @ np.asarray(points).T).T + translation).astype(np.float32)
 
 
+def classify_anchor_decision(source_decision, geometry_decision):
+    """Preserve known source failures while allowing review-only tail tiles."""
+    if source_decision == "FAIL" or geometry_decision == "FAIL":
+        return "FAIL"
+    if source_decision == "PASS" and geometry_decision == "PASS":
+        return "PASS"
+    return "REVIEW"
+
+
 def evaluate_anchor_windows(assignments, times, odom_positions, gt_positions,
                             pcd_files, max_sample, plane_voxel, plane_cell,
                             plane_min_points, plane_pass, plane_review):
@@ -238,12 +247,7 @@ def evaluate_anchor_windows(assignments, times, odom_positions, gt_positions,
         else:
             geometry_decision = "REVIEW"
         source = assignment["source_decision"]
-        if geometry_decision == "FAIL":
-            anchor_decision = "FAIL"
-        elif geometry_decision == "PASS" and source == "PASS":
-            anchor_decision = "PASS"
-        else:
-            anchor_decision = "REVIEW"
+        anchor_decision = classify_anchor_decision(source, geometry_decision)
         results.append({
             "window_index": index,
             "start_elapsed_s": float(times[start] - times[0]),
@@ -498,6 +502,7 @@ def main():
             "PCD-to-odometry association is sequence-based after exact count/contiguity checks",
             "Only deterministic point samples are transformed during this audit",
             "Dynamic objects and vegetation affect plane and seam metrics",
+            "Rigid anchoring preserves within-tile plane thickness; adjacent seam metrics test cross-tile placement",
             "GT and Xsens reference origins are treated as coincident because their lever arm is undocumented",
             "Passing this audit authorizes tile generation, not calibrated-reflectivity claims",
         ],

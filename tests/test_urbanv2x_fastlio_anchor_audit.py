@@ -11,6 +11,7 @@ if SCRIPT_DIR not in sys.path:
 
 from urbanv2x_fastlio_anchor_audit import (  # noqa: E402
     build_window_assignments,
+    classify_anchor_decision,
     ordered_scan_files,
     transform_points,
 )
@@ -107,6 +108,17 @@ class RigidAnchorTest(unittest.TestCase):
             atol=1e-12,
         )
         self.assertAlmostEqual(np.linalg.det(estimated_rotation), 1.0, places=12)
+
+
+class DecisionTest(unittest.TestCase):
+    def test_source_failure_is_never_rehabilitated_by_rigid_geometry(self):
+        self.assertEqual(classify_anchor_decision("FAIL", "PASS"), "FAIL")
+        self.assertEqual(classify_anchor_decision("PASS", "FAIL"), "FAIL")
+
+    def test_review_and_tail_remain_review(self):
+        self.assertEqual(classify_anchor_decision("REVIEW", "PASS"), "REVIEW")
+        self.assertEqual(classify_anchor_decision("TAIL_REVIEW", "PASS"), "REVIEW")
+        self.assertEqual(classify_anchor_decision("PASS", "PASS"), "PASS")
 
 
 if __name__ == "__main__":

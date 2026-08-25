@@ -1,0 +1,47 @@
+WARNING: Package name "del3CRTK" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del1RTK" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del5CAS" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del2AINLOS" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del4MSF" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+... logging to /root/.ros/log/bbea85ce-3f1e-11f1-b577-ae074cd2250f/roslaunch-e8d32d429cd8-3541.log
+Checking log directory for disk usage. This may take a while.
+Press Ctrl-C to interrupt
+Done checking log file disk usage. Usage is <1GB.
+
+WARNING: Package name "del3CRTK" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del1RTK" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del5CAS" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del2AINLOS" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del4MSF" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+started roslaunch server http://e8d32d429cd8:33671/
+
+SUMMARY
+========
+
+PARAMETERS
+ * /rosdistro: noetic
+ * /rosversion: 1.17.4
+ * /ublox_driver/config_file: /root/gnss_ws/src...
+
+NODES
+  /
+    ublox_driver (ublox_driver/ublox_driver)
+
+ROS_MASTER_URI=http://localhost:11311
+
+WARNING: Package name "del3CRTK" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del1RTK" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del5CAS" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del2AINLOS" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+WARNING: Package name "del4MSF" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+process[ublox_driver-1]: started with pid [3555]
+terminate called after throwing an instance of 'boost::wrapexcept<boost::system::system_error>'
+  what():  open: No such file or directory
+[ublox_driver-1] process has died [pid 3555, exit code -6, cmd /root/gnss_ws/devel/lib/ublox_driver/ublox_driver __name:=ublox_driver __log:=/root/.ros/log/bbea85ce-3f1e-11f1-b577-ae074cd2250f/ublox_driver-1.log].
+log file: /root/.ros/log/bbea85ce-3f1e-11f1-b577-ae074cd2250f/ublox_driver-1*.log
+all processes on machine have died, roslaunch will exit
+shutting down processing monitor...
+... shutting down processing monitor complete
+done
+root@e8d3
+

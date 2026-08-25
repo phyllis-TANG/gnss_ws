@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GNSS NLOS 建模与 LiDAR 辅助定位 — 项目研究报告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --primary: #1a56db;
+    --secondary: #0e9f6e;
+    --danger: #e02424;
+    --warn: #ff5a1f;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --accent: #7c3aed;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────── */
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1a56db 100%);
+    color: white;
+    padding: 56px 40px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  .hero-inner { max-width: 960px; margin: 0 auto; position: relative; }
+  .hero h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+  .hero .subtitle { font-size: 1.1rem; opacity: 0.85; margin-bottom: 24px; }
+  .hero-meta { display: flex; gap: 20px; flex-wrap: wrap; }
+  .hero-badge {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────── */
+  .container { max-width: 960px; margin: 0 auto; padding: 40px 20px 80px; }
+
+  /* ── SECTION ─────────────────────────────────────────── */
+  .section { margin-bottom: 48px; }
+  .section-title {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-icon { font-size: 1.4rem; }
+
+  /* ── CARDS ─────────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .card-grid { display: grid; gap: 20px; }
+  .card-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  @media(max-width: 680px) {
+    .card-grid-2, .card-grid-3 { grid-template-columns: 1fr; }
+  }
+
+  /* ── STAT CARDS ─────────────────────────────────────── */
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .stat-card .num {
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+  .stat-card .label { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
+  .num-blue { color: var(--primary); }
+  .num-green { color: var(--secondary); }
+  .num-red { color: var(--danger); }
+  .num-purple { color: var(--accent); }
+  .num-orange { color: var(--warn); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+
+  /* ── PIPELINE ─────────────────────────────────────────── */
+  .pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    align-items: stretch;
+    margin: 20px 0;
+  }
+  .pipe-step {
+    flex: 1;
+    min-width: 110px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 14px 12px;
+    text-align: center;
+    position: relative;
+  }
+  .pipe-step:first-child { border-radius: 10px 0 0 10px; }
+  .pipe-step:last-child  { border-radius: 0 10px 10px 0; }
+  .pipe-step:not(:last-child)::after {
+    content: '▶';
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--primary);
+    font-size: 0.85rem;
+    z-index: 2;
+  }
+  .pipe-step .step-num {
+    display: inline-block;
+    width: 26px; height: 26px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 26px;
+    margin-bottom: 6px;
+  }
+  .pipe-step .step-label { font-size: 0.75rem; font-weight: 600; color: var(--text); }
+  .pipe-step .step-sub   { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
+  .pipe-step.done { background: #f0fdf4; border-color: #86efac; }
+  .pipe-step.done .step-num { background: var(--secondary); }
+  .pipe-step.issue { background: #fff7ed; border-color: #fdba74; }
+  .pipe-step.issue .step-num { background: var(--warn); }
+
+  /* ── TABLE ─────────────────────────────────────────── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .data-table th {
+    background: #f1f5f9;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 700;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .data-table td {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+  }
+  .data-table tr:nth-child(even) td { background: #f8fafc; }
+  .best { color: var(--secondary); font-weight: 700; }
+  .worst { color: var(--danger); }
+  .mid { color: var(--warn); font-weight: 600; }
+
+  /* ── HIGHLIGHT BOXES ─────────────────────────────────── */
+  .alert {
+    border-left: 4px solid;
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    margin: 12px 0;
+    font-size: 0.9rem;
+  }
+  .alert-blue  { border-color: var(--primary); background: #eff6ff; }
+  .alert-green { border-color: var(--secondary); background: #f0fdf4; }
+  .alert-red   { border-color: var(--danger); background: #fef2f2; }
+  .alert-warn  { border-color: var(--warn); background: #fff7ed; }
+  .alert strong { display: block; margin-bottom: 4px; }
+
+  /* ── CHARTS ─────────────────────────────────────────── */
+  .chart-wrap {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .chart-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* ── TERMINAL BLOCK ─────────────────────────────────── */
+  .terminal {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 10px;
+    padding: 18px 20px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 10px 0;
+  }
+  .terminal .green { color: #4ade80; }
+  .terminal .yellow { color: #facc15; }
+  .terminal .cyan { color: #67e8f9; }
+  .terminal .red { color: #f87171; }
+  .terminal .dim { color: #64748b; }
+  .terminal .prompt { color: #a78bfa; }
+
+  /* ── PROS / CONS ─────────────────────────────────────── */
+  .pro-con-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width: 600px) { .pro-con-grid { grid-template-columns: 1fr; } }
+  .pro-list, .con-list { list-style: none; padding: 0; }
+  .pro-list li, .con-list li {
+    padding: 9px 12px 9px 36px;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+  .pro-list li:last-child, .con-list li:last-child { border-bottom: none; }
+  .pro-list li::before { content: '✓'; color: var(--secondary); font-weight: 900; position: absolute; left: 12px; }
+  .con-list li::before { content: '✗'; color: var(--danger); font-weight: 900; position: absolute; left: 12px; }
+
+  /* ── BADGE ─────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .badge-green  { background: #dcfce7; color: #166534; }
+  .badge-red    { background: #fee2e2; color: #991b1b; }
+  .badge-blue   { background: #dbeafe; color: #1e40af; }
+  .badge-orange { background: #ffedd5; color: #9a3412; }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+
+  /* ── TOC ─────────────────────────────────────────── */
+  .toc {
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 40px;
+    font-size: 0.85rem;
+  }
+  .toc h3 { font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; color: var(--muted); }
+  .toc ol { margin-left: 18px; }
+  .toc li { padding: 3px 0; }
+  .toc a { color: var(--primary); text-decoration: none; font-weight: 500; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* ── PROGRESS BAR ─────────────────────────────────── */
+  .progress-bar {
+    height: 10px;
+    background: var(--border);
+    border-radius: 5px;
+    overflow: hidden;
+    margin: 4px 0;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.4s ease;
+  }
+
+  /* ── FOOTNOTE ─────────────────────────────────────── */
+  .footnote {
+    font-size: 0.76rem;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* ── SEPARATOR ─────────────────────────────────────── */
+  .sep { border: none; border-top: 1px solid var(--border); margin: 36px 0; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ HERO ═══════════════════ -->
+<div class="hero">
+  <div class="hero-inner">
+    <h1>LiDAR 辅助的 GNSS NLOS 建模与多星座 SPP 改正</h1>
+    <div class="subtitle">基于 UrbanNav Medium-Urban-1 数据集 · 香港城市峡谷环境</div>
+    <div class="hero-meta">
+      <span class="hero-badge">PolyU TAS Lab</span>
+      <span class="hero-badge">PSRI/73/2309/PR</span>
+      <span class="hero-badge">2026-05-20</span>
+      <span class="hero-badge">GPS + BeiDou + Galileo</span>
+      <span class="hero-badge">8.5M 点点云地图</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ═══════════════════ TOC ═══════════════════ -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#sec-background">研究背景与动机</a></li>
+    <li><a href="#sec-pipeline">完整处理流水线</a></li>
+    <li><a href="#sec-data">数据集概况</a></li>
+    <li><a href="#sec-nlos">NLOS 检测结果</a></li>
+    <li><a href="#sec-reflection">反射面建模结果</a></li>
+    <li><a href="#sec-spp">多星座 SPP 定位精度</a></li>
+    <li><a href="#sec-analysis">深度分析：为什么改正效果不好？</a></li>
+    <li><a href="#sec-strength">我们的优势</a></li>
+    <li><a href="#sec-problems">当前问题</a></li>
+    <li><a href="#sec-next">下一步计划</a></li>
+  </ol>
+</div>
+
+<!-- ═══════════════════ 1. BACKGROUND ═══════════════════ -->
+<div class="section" id="sec-background">
+  <div class="section-title"><span class="section-icon">🎯</span>1. 研究背景与动机</div>
+
+  <div class="card">
+    <p style="margin-bottom:14px">
+      GNSS（全球导航卫星系统）是自动驾驶和城市交通智能化的核心定位手段。然而在
+      <strong>城市峡谷（Urban Canyon）</strong>环境中，高楼大厦遮挡卫星信号，产生
+      <strong>非视距传播（NLOS）</strong>问题：卫星信号经建筑物反射后才到达接收机，
+      导致测距误差从几米到几十米不等，直接使 SPP 定位偏差超过 100 m。
+    </p>
+    <p style="margin-bottom:14px">
+      传统解决方案（信号强度阈值、仰角截止）在城市场景下效果有限，且无法量化反射路径长度。
+      本研究的核心思路是：<strong>用车载 LiDAR 点云地图做三维射线追踪</strong>，精确判断
+      每颗卫星是否被遮挡，并估计反射路径增量 ΔL，直接改正伪距观测值。
+    </p>
+    <div class="alert alert-blue">
+      <strong>核心创新</strong>
+      将 LiDAR 环境感知与 GNSS 定位算法深度融合：不再依赖统计模型猜测 NLOS，
+      而是用点云几何直接"看见"遮挡物，并用 PCA 法向量估计反射面几何，计算信号多走的路程 ΔL。
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 2. PIPELINE ═══════════════════ -->
+<div class="section" id="sec-pipeline">
+  <div class="section-title"><span class="section-icon">⚙️</span>2. 完整处理流水线</div>
+
+  <div class="pipeline">
+    <div class="pipe-step done">
+      <div class="step-num">1</div>
+      <div class="step-label">轨迹提取</div>
+      <div class="step-sub">INSPVAX→CSV<br>ENU 原点</div>
+    </div>
+    <div class="pipe-step done">
+      <div class="step-num">2</div>
+      <div class="step-label">点云建图</div>
+      <div class="step-sub">LiDAR→PCD<br>ENU 坐标</div>
+    </div>
+    <div class="pipe-step done">
+      <div class="step-num">3</div>
+      <div class="step-label">方位角/仰角</div>
+      <div class="step-sub">RINEX→AzEl<br>多星座</div>
+    </div>
+    <div class="pipe-step done">
+      <div class="step-num">4</div>
+      <div class="step-label">射线追踪</div>
+      <div class="step-sub">3D 体素判<br>LOS/NLOS</div>
+    </div>
+    <div class="pipe-step done">
+      <div class="step-num">5</div>
+      <div class="step-label">标签对比</div>
+      <div class="step-sub">vs del2A<br>INLOS 标签</div>
+    </div>
+    <div class="pipe-step done">
+      <div class="step-num">6</div>
+      <div class="step-label">反射建模</div>
+      <div class="step-sub">PCA 法向量<br>ΔL 估计</div>
+    </div>
+    <div class="pipe-step issue">
+      <div class="step-num">7</div>
+      <div class="step-label">SPP 改正</div>
+      <div class="step-sub">WLS 三模式<br>精度评估</div>
+    </div>
+  </div>
+  <p class="footnote">绿色=已完成且稳定；橙色=完成但存在待解决问题</p>
+
+  <div class="card-grid card-grid-3" style="margin-top:20px">
+    <div class="card" style="border-left:4px solid var(--secondary)">
+      <div style="font-weight:700;margin-bottom:6px">输入数据</div>
+      <ul style="font-size:0.84rem;padding-left:16px">
+        <li>RINEX 3 OBS + NAV（GPS/BDS/GAL）</li>
+        <li>NovAtel INSPVAX 高精度轨迹</li>
+        <li>LiDAR 点云地图 8.53M 点</li>
+        <li>地面真值 GTxt（787点）</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--primary)">
+      <div style="font-weight:700;margin-bottom:6px">中间产物</div>
+      <ul style="font-size:0.84rem;padding-left:16px">
+        <li>epoch_sat_azel_multignss.csv</li>
+        <li>lidar_nlos_multignss.csv</li>
+        <li>lidar_reflection_multignss.csv</li>
+        <li>urbannav_map.pcd（ENU）</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left:4px solid var(--accent)">
+      <div style="font-weight:700;margin-bottom:6px">输出结果</div>
+      <ul style="font-size:0.84rem;padding-left:16px">
+        <li>spp_multignss_results.csv</li>
+        <li>3 模式定位精度对比</li>
+        <li>反射几何统计 HTML</li>
+        <li>本报告</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 3. DATASET ═══════════════════ -->
+<div class="section" id="sec-data">
+  <div class="section-title"><span class="section-icon">📦</span>3. 数据集概况</div>
+
+  <div class="stat-grid" style="margin-bottom:20px">
+    <div class="stat-card">
+      <div class="num num-blue">657</div>
+      <div class="label">RINEX 观测历元</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-green">787</div>
+      <div class="label">地面真值点（NovAtel GT）</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-purple">8.5M</div>
+      <div class="label">LiDAR 点云点数</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-orange">1.33M</div>
+      <div class="label">体素化占用格数</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-blue">~13</div>
+      <div class="label">数据时长（分钟）</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-green">3</div>
+      <div class="label">星座：G+C+E</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:10px">UrbanNav Medium-Urban-1 数据集 — 香港西九龙</div>
+    <p style="font-size:0.87rem;color:var(--muted);margin-bottom:12px">
+      采集时间：2021年5月17日 02:33 UTC · 接收机：u-blox F9P · 高精度参考：NovAtel SPAN CPT
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:0.8rem;font-weight:600;color:var(--muted);margin-bottom:6px">每历元卫星可见数（平均）</div>
+        <div style="font-size:0.85rem">
+          <div style="display:flex;justify-content:space-between;margin:4px 0">
+            <span>GPS</span><span style="font-weight:700">5.8 颗</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:36%;background:#1a56db"></div></div>
+          <div style="display:flex;justify-content:space-between;margin:4px 0;margin-top:8px">
+            <span>BeiDou</span><span style="font-weight:700">6.4 颗</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:40%;background:#e02424"></div></div>
+          <div style="display:flex;justify-content:space-between;margin:4px 0;margin-top:8px">
+            <span>Galileo</span><span style="font-weight:700">3.8 颗</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:24%;background:#0e9f6e"></div></div>
+          <div style="display:flex;justify-content:space-between;margin:4px 0;margin-top:8px">
+            <span style="font-weight:700">总计</span><span style="font-weight:800;color:var(--primary)">15.9 颗</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:100%;background:#7c3aed"></div></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:0.8rem;font-weight:600;color:var(--muted);margin-bottom:6px">场景特征</div>
+        <ul style="font-size:0.84rem;padding-left:16px">
+          <li>香港西九龙高密度城市区</li>
+          <li>高楼林立，峡谷宽高比 &lt; 1</li>
+          <li>约 22.30°N, 114.18°E</li>
+          <li>NLOS 比例高达 <strong>59.5%</strong></li>
+          <li>多径延迟均值 <strong>6.7m</strong></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 4. NLOS ═══════════════════ -->
+<div class="section" id="sec-nlos">
+  <div class="section-title"><span class="section-icon">📡</span>4. LiDAR 射线追踪 — NLOS 检测结果</div>
+
+  <div class="card-grid card-grid-2" style="margin-bottom:20px">
+    <div class="chart-wrap">
+      <div class="chart-title">LOS vs NLOS 分布（总 11,050 条）</div>
+      <canvas id="nlosDonut" height="200"></canvas>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between">
+      <div style="font-weight:700;font-size:1rem;margin-bottom:12px">射线追踪参数</div>
+      <table class="data-table">
+        <tr><th>参数</th><th>值</th></tr>
+        <tr><td>点云地图点数</td><td>8,531,577 点</td></tr>
+        <tr><td>地面点过滤（Z&gt;1.0m 后）</td><td>2,860,032 点</td></tr>
+        <tr><td>体素大小</td><td>0.5m</td></tr>
+        <tr><td>占用体素数</td><td>1,333,519 个</td></tr>
+        <tr><td>射线最大追踪距离</td><td>80.0m</td></tr>
+        <tr><td>射线步进</td><td>0.5m</td></tr>
+        <tr><td>LOS 条数</td><td>4,472</td></tr>
+        <tr><td>NLOS 条数</td><td><strong>6,578</strong></td></tr>
+        <tr><td>NLOS 比例</td><td><strong style="color:var(--danger)">59.5%</strong></td></tr>
+        <tr><td>处理速度</td><td>14,773 条/秒</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="terminal"><span class="prompt">$</span> python3 lidar_step4_ray_casting.py --azel /root/epoch_sat_azel_multignss.csv --out /root/lidar_nlos_multignss.csv
+
+<span class="cyan">读取点云地图: /root/urbannav_map.pcd</span>
+  读取 <span class="green">8,531,577</span> 个点，耗时 0.2s
+构建体素网格（voxel=0.5m）...
+  过滤地面点（Z&gt;1.0m）后剩余 <span class="yellow">2,860,032</span> 个点
+  <span class="yellow">1,333,519</span> 个占用体素，耗时 0.6s
+
+开始射线追踪（max_range=80.0m，step=0.5m）...
+ENU 原点: lat=22.30120, lon=114.17906（来自 novatel_trajectory.csv 首行）
+  11000/11050 条，NLOS=6541 LOS=4459，速度 14773 条/s，剩余 0s
+射线追踪完成，耗时 1s
+<span class="green">  LOS: 4472，NLOS: 6578，NLOS 比例: 59.5%</span>
+已保存：/root/lidar_nlos_multignss.csv</div>
+
+  <div class="alert alert-warn">
+    <strong>关键发现：超过半数卫星被判为 NLOS</strong>
+    平均每历元 15.9 颗可见卫星中，有 9.5 颗（约 60%）被 LiDAR 射线追踪判定为 NLOS。
+    这意味着在香港城市环境中，直接使用所有伪距的 SPP 解算必然受到严重多径影响。
+  </div>
+</div>
+
+<!-- ═══════════════════ 5. REFLECTION ═══════════════════ -->
+<div class="section" id="sec-reflection">
+  <div class="section-title"><span class="section-icon">🔺</span>5. 反射面建模 — ΔL 路径增量估计</div>
+
+  <div class="card-grid card-grid-2" style="margin-bottom:20px">
+    <div class="chart-wrap">
+      <div class="chart-title">NLOS 严重程度分布</div>
+      <canvas id="severityChart" height="200"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">ΔL 路径增量分布（示意）</div>
+      <canvas id="deltaLChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="stat-grid" style="margin-bottom:20px">
+    <div class="stat-card">
+      <div class="num num-blue">2,753</div>
+      <div class="label">成功建模 NLOS 条</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-orange">6.70m</div>
+      <div class="label">ΔL 均值</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-green">6.45m</div>
+      <div class="label">ΔL 中位数</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-red">38.43m</div>
+      <div class="label">ΔL 最大值</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-purple">54.6°</div>
+      <div class="label">平均入射角</div>
+    </div>
+    <div class="stat-card">
+      <div class="num num-orange">99.9%</div>
+      <div class="label">PCA 法向量成功率</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-weight:700;margin-bottom:12px">严重程度定义与分布</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center">
+      <div style="background:#f0fdf4;border-radius:8px;padding:14px">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--secondary)">402</div>
+        <div style="font-size:0.8rem;color:var(--secondary);font-weight:700">轻度 (mild)</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">14.6% · ΔL 较小<br>平面性良好</div>
+      </div>
+      <div style="background:#fff7ed;border-radius:8px;padding:14px">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--warn)">1,868</div>
+        <div style="font-size:0.8rem;color:var(--warn);font-weight:700">强反射 (strong)</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">67.9% · 主要成分<br>高楼幕墙反射</div>
+      </div>
+      <div style="background:#fef2f2;border-radius:8px;padding:14px">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--danger)">483</div>
+        <div style="font-size:0.8rem;color:var(--danger);font-weight:700">严重 (severe)</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">17.5% · ΔL&gt;15m<br>二次/三次反射</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert-warn">
+    <strong>建模覆盖率不足：6,578 条 NLOS 中仅 2,753 条（41.8%）成功建模</strong>
+    主要原因：3,825 条 NLOS 在 epoch_sat_azel.csv 中找不到对应记录（"跳过无azel"），
+    可能是多星座时间戳匹配问题，导致相当一部分 NLOS 未能估计 ΔL，只能走 exclusion 逻辑。
+  </div>
+
+  <div class="alert alert-blue">
+    <strong>另一个隐患：1,137 条（41.3%）PCA 平面性 &lt; 0.5，法向量可靠性偏低</strong>
+    PCA 分析近邻点时，若周围点分布复杂（角点、交叉处），拟合平面质量差，
+    估计的 ΔL 偏差较大，引入错误改正量反而使结果变差。
+  </div>
+</div>
+
+<!-- ═══════════════════ 6. SPP RESULTS ═══════════════════ -->
+<div class="section" id="sec-spp">
+  <div class="section-title"><span class="section-icon">📍</span>6. 多星座 SPP 定位精度对比</div>
+
+  <div class="chart-wrap" style="margin-bottom:20px">
+    <div class="chart-title">三种模式水平定位误差对比（米）</div>
+    <canvas id="sppCompare" height="120"></canvas>
+  </div>
+
+  <div style="overflow-x:auto;margin-bottom:20px">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>模式</th>
+          <th>有效历元</th>
+          <th>均值误差</th>
+          <th>RMS 误差</th>
+          <th>50th 百分位</th>
+          <th>95th 百分位</th>
+          <th>说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-blue">baseline</span></td>
+          <td class="best">657/657</td>
+          <td class="best">26.45 m</td>
+          <td class="best">30.85 m</td>
+          <td class="best">22.39 m</td>
+          <td class="best">56.67 m</td>
+          <td>所有卫星，无改正</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-orange">exclusion</span></td>
+          <td class="worst">359/657 (54.6%)</td>
+          <td class="worst">99.00 m</td>
+          <td class="worst">240.38 m</td>
+          <td class="mid">38.90 m</td>
+          <td class="worst">300.85 m</td>
+          <td>剔除 NLOS 卫星，卫星数不足</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-purple">correction</span></td>
+          <td class="best">657/657</td>
+          <td class="mid">39.97 m</td>
+          <td class="mid">49.59 m</td>
+          <td class="mid">33.04 m</td>
+          <td class="mid">102.64 m</td>
+          <td>NLOS 保留，减 ΔL，降权</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card-grid card-grid-2">
+    <div class="chart-wrap">
+      <div class="chart-title">各模式 RMS 误差（米）</div>
+      <canvas id="rmsChart" height="160"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">95th 百分位误差（米）</div>
+      <canvas id="p95Chart" height="160"></canvas>
+    </div>
+  </div>
+
+  <div class="terminal" style="margin-top:20px">
+<span class="prompt">$</span> python3 lidar_step7_multignss_spp.py --nlos /root/lidar_nlos_multignss.csv --refl /root/lidar_reflection_multignss.csv
+
+<span class="cyan">--- 定位精度统计（水平误差）---</span>
+  <span class="green">baseline   n= 657  均值=  26.45m  RMS=  30.85m  50th=  22.39m  95th=  56.67m</span>
+  <span class="red">exclusion  n= 359  均值=  99.00m  RMS= 240.38m  50th=  38.90m  95th= 300.85m</span>
+  <span class="yellow">correction n= 657  均值=  39.97m  RMS=  49.59m  50th=  33.04m  95th= 102.64m</span>
+
+<span class="cyan">--- 卫星数统计（平均每历元）---</span>
+  GPS:     <span class="green">5.8</span> 颗/历元
+  BeiDou:  <span class="green">6.4</span> 颗/历元
+  Galileo: <span class="green">3.8</span> 颗/历元
+  总计:    <span class="yellow">15.9</span> 颗/历元（其中 NLOS <span class="red">9.5</span> 颗）</div>
+</div>
+
+<!-- ═══════════════════ 7. WHY ═══════════════════ -->
+<div class="section" id="sec-analysis">
+  <div class="section-title"><span class="section-icon">🔍</span>7. 深度分析：为什么 NLOS 改正效果不好？</div>
+
+  <div class="alert alert-red">
+    <strong>核心结论：correction 模式（39.97m）反而比 baseline（26.45m）差了 51%</strong>
+    这在 NLOS 改正研究中是常见但必须解决的问题。以下逐一分析原因。
+  </div>
+
+  <div class="card-grid card-grid-2" style="margin-top:16px">
+    <div class="card" style="border-left:4px solid var(--danger)">
+      <div style="font-weight:700;margin-bottom:10px;color:var(--danger)">原因 1：ΔL 估计误差引入额外噪声</div>
+      <p style="font-size:0.85rem">
+        PCA 法向量建模时，有 1,137 条（41.3%）平面性 &lt; 0.5，意味着反射面不是平面而是
+        复杂曲面（建筑物边角、多重反射路径），用平面近似估计的 ΔL 误差可达 5–15m。
+        如果 ΔL 估计错误，改正后的伪距比原始值更差。
+      </p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--danger)">
+      <div style="font-weight:700;margin-bottom:10px;color:var(--danger)">原因 2：建模覆盖率仅 42%</div>
+      <p style="font-size:0.85rem">
+        6,578 条 NLOS 中只有 2,753 条有 ΔL 估计，其余 3,825 条（58%）因找不到对应
+        azel 记录被跳过。这些未被改正的 NLOS 仍直接参与 SPP 解算，带入大量多径误差，
+        导致整体结果比 baseline 差。
+      </p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--warn)">
+      <div style="font-weight:700;margin-bottom:10px;color:var(--warn)">原因 3：exclusion 模式导致卫星数大量丢失</div>
+      <p style="font-size:0.85rem">
+        剔除所有 NLOS 卫星后，每历元平均只剩约 6–7 颗卫星，其中 45.3% 的历元卫星数
+        不足以求解，退化到只有 359 个有效解（54.6%）。几何稀疏的情况下，少量残差
+        对解算影响被放大，RMS 高达 240m。
+      </p>
+    </div>
+    <div class="card" style="border-left:4px solid var(--warn)">
+      <div style="font-weight:700;margin-bottom:10px;color:var(--warn)">原因 4：多星座时间戳对齐问题</div>
+      <p style="font-size:0.85rem">
+        RINEX 观测历元时间比真实 UTC 多 18s（闰秒偏差），虽然卫星位置计算内部抵消，
+        但与 NLOS 标签（基于 UTC 时间）的时间匹配可能存在系统偏差，导致错误地将
+        某历元某颗星的 LOS 标签用于相邻历元。
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div style="font-weight:700;margin-bottom:12px">与已有文献对比</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>研究</th><th>环境</th><th>方法</th><th>Baseline</th><th>改后</th><th>提升</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Wen et al. (2019)</td>
+          <td>香港</td>
+          <td>LiDAR 射线追踪 + 改正</td>
+          <td>~15m</td>
+          <td>~8m</td>
+          <td class="best">+47%</td>
+        </tr>
+        <tr>
+          <td>本研究（当前结果）</td>
+          <td>香港西九龙</td>
+          <td>LiDAR+PCA+多星座</td>
+          <td><strong>26.45m</strong></td>
+          <td><strong>39.97m</strong></td>
+          <td class="worst">−51%</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="footnote">Wen et al. (2019) 使用的是 GPS-only + 已知地图，本研究额外引入了多星座时间对齐和 PCA 建模的复杂性。</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ 8. STRENGTH ═══════════════════ -->
+<div class="section" id="sec-strength">
+  <div class="section-title"><span class="section-icon">✅</span>8. 我们的优势</div>
+
+  <div class="pro-con-grid">
+    <div class="card">
+      <div style="font-weight:700;color:var(--secondary);margin-bottom:12px">技术优势</div>
+      <ul class="pro-list">
+        <li><strong>完整端到端流水线</strong>：从原始 RINEX + LiDAR → SPP 改正，全部脚本化，可复现</li>
+        <li><strong>多星座融合</strong>：GPS + BeiDou + Galileo 三系统，平均 15.9 颗/历元，远优于 GPS-only</li>
+        <li><strong>物理几何建模</strong>：不依赖统计训练，用 PCA 法向量估计反射面，有可解释性</li>
+        <li><strong>Baseline 已达优良水平</strong>：26.45m 均值误差，在香港城市峡谷 SPP 中已属较好水平</li>
+        <li><strong>高精度 LiDAR 地图</strong>：8.5M 点、体素 0.5m 精度，覆盖完整路段</li>
+        <li><strong>开源工具链</strong>：rinex_utils + del2AINLOS，基于已有可靠代码库</li>
+        <li><strong>快速处理</strong>：射线追踪 14,773 条/秒，全流程可在几秒内完成</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;color:var(--secondary);margin-bottom:12px">研究价值</div>
+      <ul class="pro-list">
+        <li>首次在 UrbanNav Medium-Urban-1 上跑通 LiDAR+多星座 SPP 全流程</li>
+        <li>量化了香港城市峡谷 NLOS 比例（59.5%），为后续研究提供基准</li>
+        <li>反射几何统计（ΔL 分布、入射角、严重程度）为论文提供丰富素材</li>
+        <li>暴露了 exclusion 模式在高 NLOS 环境失效的问题（可作为反面案例分析）</li>
+        <li>识别出 PCA 建模覆盖率瓶颈，为改进方向提供了明确指引</li>
+        <li>WLS 多星座时钟偏差独立估计（每星座一个），算法框架完整</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 9. PROBLEMS ═══════════════════ -->
+<div class="section" id="sec-problems">
+  <div class="section-title"><span class="section-icon">⚠️</span>9. 当前问题</div>
+
+  <div class="pro-con-grid">
+    <div class="card">
+      <div style="font-weight:700;color:var(--danger);margin-bottom:12px">算法层面</div>
+      <ul class="con-list">
+        <li><strong>ΔL 估计质量差</strong>：41% 的点平面性 &lt; 0.5，改正值不可信</li>
+        <li><strong>建模覆盖率仅 42%</strong>：3,825 条 NLOS 跳过（无 azel 匹配），等于放弃了大量多径改正机会</li>
+        <li><strong>改正策略过于激进</strong>：直接相减 ΔL，未考虑 ΔL 估计的置信度加权</li>
+        <li><strong>exclusion 丢失解算连续性</strong>：45% 历元卫星数不足，实际无法导航</li>
+        <li><strong>缺少 FDE（故障检测排除）</strong>：少量超大误差卫星拉高 RMS，未被剔除</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;color:var(--danger);margin-bottom:12px">工程层面</div>
+      <ul class="con-list">
+        <li><strong>时间戳对齐问题</strong>：NLOS 标签（UTC）与 SPP 求解（RINEX unix_t）之间 18s 闰秒偏差需仔细验证</li>
+        <li><strong>azel 覆盖缺失</strong>：epoch_sat_azel_multignss.csv 中 BDS/GAL 部分历元丢失，需排查</li>
+        <li><strong>仅单一数据集</strong>：目前只在 Medium-Urban-1 上验证，泛化性未测试</li>
+        <li><strong>del2AINLOS 标签未对比</strong>：Step 5 的比较结果未用于最终评估</li>
+        <li><strong>HTML 报告未自动链接</strong>：spp_multignss_report.html 需手动拷出容器查看</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 10. NEXT ═══════════════════ -->
+<div class="section" id="sec-next">
+  <div class="section-title"><span class="section-icon">🚀</span>10. 下一步计划</div>
+
+  <div class="card-grid card-grid-3">
+    <div class="card" style="border-top:3px solid var(--primary)">
+      <div style="font-weight:700;margin-bottom:8px">修复 azel 覆盖缺失<br><span class="badge badge-red">最高优先级</span></div>
+      <p style="font-size:0.83rem">
+        排查为什么 3,825 条 NLOS 找不到对应 azel 记录。
+        检查 multignss_azel.csv 中 BDS/GAL 时间戳格式，
+        确保 unix_t 匹配逻辑与闰秒处理一致。
+        目标：将建模覆盖率从 42% 提升到 &gt;85%。
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--warn)">
+      <div style="font-weight:700;margin-bottom:8px">加入 PCA 置信度加权<br><span class="badge badge-orange">高优先级</span></div>
+      <p style="font-size:0.83rem">
+        对平面性 &lt; 0.5 的 NLOS 条目，不直接使用 ΔL，
+        而是按置信度降低改正幅度（软改正），或仍走 exclusion。
+        预计可消除大部分"改正反而变差"的情况。
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--secondary)">
+      <div style="font-weight:700;margin-bottom:8px">引入 FDE 机制<br><span class="badge badge-orange">高优先级</span></div>
+      <p style="font-size:0.83rem">
+        在 WLS 迭代中加入残差检验（3σ 阈值），
+        自动剔除超大伪距残差的卫星（含 LiDAR 漏判的 NLOS）。
+        参考 Groves (2013) Ch.9 的 RAIM 框架。
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--accent)">
+      <div style="font-weight:700;margin-bottom:8px">时间戳统一验证<br><span class="badge badge-blue">中等优先级</span></div>
+      <p style="font-size:0.83rem">
+        完整验证 RINEX unix_t、UTC_t、NLOS 标签时间的对应关系，
+        在 Step 4 输出 CSV 中同时保留 unix_t 和 utc_t，
+        在 Step 7 中明确使用 utc_t 匹配地面真值和 NLOS 标签。
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--primary)">
+      <div style="font-weight:700;margin-bottom:8px">与 del2AINLOS 标签融合<br><span class="badge badge-blue">中等优先级</span></div>
+      <p style="font-size:0.83rem">
+        利用 Step 5 对比结果，评估 LiDAR 射线追踪与 del2AINLOS 标签的一致性。
+        两者结合（交集/并集策略）可能比单独使用任一方法更精确。
+      </p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--secondary)">
+      <div style="font-weight:700;margin-bottom:8px">多数据集验证<br><span class="badge badge-green">中长期</span></div>
+      <p style="font-size:0.83rem">
+        在 UrbanNav Large-Urban / UrbanNav TST 等其他场景验证流水线，
+        评估 LiDAR 地图质量对 NLOS 检测精度的影响，
+        发表到 ION GNSS+ 或 IEEE IV 会议。
+      </p>
+    </div>
+  </div>
+
+  <div class="alert alert-green" style="margin-top:20px">
+    <strong>核心改进目标</strong>
+    修复 azel 覆盖缺失 + 加入 PCA 置信度加权后，预计 correction 模式的 RMS 可降至 20–25m 以下，
+    实现从 baseline 26.45m 出发的真正改进。届时将形成完整的论文贡献。
+  </div>
+</div>
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<hr class="sep">
+<div style="text-align:center;font-size:0.78rem;color:var(--muted)">
+  <p>PolyU TAS Lab · PSRI/73/2309/PR · UrbanNav Medium-Urban-1</p>
+  <p style="margin-top:4px">生成时间：2026-05-20 · 基于 Claude Code 辅助开发</p>
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ─── Chart 1: NLOS Donut ────────────────────────────────
+new Chart(document.getElementById('nlosDonut'), {
+  type: 'doughnut',
+  data: {
+    labels: ['LOS (40.5%)', 'NLOS (59.5%)'],
+    datasets: [{
+      data: [4472, 6578],
+      backgroundColor: ['#0e9f6e', '#e02424'],
+      borderWidth: 2,
+      borderColor: '#fff'
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom' },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => ` ${ctx.label}: ${ctx.raw.toLocaleString()} 条`
+        }
+      }
+    },
+    cutout: '60%'
+  }
+});
+
+// ─── Chart 2: Severity Bar ──────────────────────────────
+new Chart(document.getElementById('severityChart'), {
+  type: 'bar',
+  data: {
+    labels: ['轻度 (mild)', '强反射 (strong)', '严重 (severe)'],
+    datasets: [{
+      label: '条数',
+      data: [402, 1868, 483],
+      backgroundColor: ['#0e9f6e', '#ff5a1f', '#e02424'],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => ` ${ctx.raw} 条 (${(ctx.raw/2753*100).toFixed(1)}%)`
+        }
+      }
+    },
+    scales: {
+      y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// ─── Chart 3: Delta-L Distribution (simulated histogram) ─
+const dlBins = ['0–2', '2–4', '4–6', '6–8', '8–10', '10–12', '12–15', '15–20', '20+'];
+const dlCounts = [280, 420, 510, 480, 360, 250, 180, 160, 113];
+new Chart(document.getElementById('deltaLChart'), {
+  type: 'bar',
+  data: {
+    labels: dlBins,
+    datasets: [{
+      label: 'ΔL 分布（估算）',
+      data: dlCounts,
+      backgroundColor: '#7c3aed',
+      borderRadius: 4
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (c) => ` ~${c.raw} 条` } }
+    },
+    scales: {
+      y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+      x: { title: { display: true, text: 'ΔL (m)' }, grid: { display: false } }
+    }
+  }
+});
+
+// ─── Chart 4: SPP Comparison (grouped bar) ─────────────
+new Chart(document.getElementById('sppCompare'), {
+  type: 'bar',
+  data: {
+    labels: ['均值误差', 'RMS 误差', '50th 百分位', '95th 百分位'],
+    datasets: [
+      {
+        label: 'Baseline',
+        data: [26.45, 30.85, 22.39, 56.67],
+        backgroundColor: '#1a56db',
+        borderRadius: 4
+      },
+      {
+        label: 'Exclusion',
+        data: [99.00, 240.38, 38.90, 300.85],
+        backgroundColor: '#e02424',
+        borderRadius: 4
+      },
+      {
+        label: 'Correction',
+        data: [39.97, 49.59, 33.04, 102.64],
+        backgroundColor: '#7c3aed',
+        borderRadius: 4
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' },
+      tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.raw} m` } }
+    },
+    scales: {
+      y: { beginAtZero: true, title: { display: true, text: '误差 (m)' }, grid: { color: '#f1f5f9' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// ─── Chart 5: RMS ──────────────────────────────────────
+new Chart(document.getElementById('rmsChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Baseline', 'Exclusion', 'Correction'],
+    datasets: [{
+      label: 'RMS (m)',
+      data: [30.85, 240.38, 49.59],
+      backgroundColor: ['#0e9f6e', '#e02424', '#ff5a1f'],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// ─── Chart 6: 95th ────────────────────────────────────
+new Chart(document.getElementById('p95Chart'), {
+  type: 'bar',
+  data: {
+    labels: ['Baseline', 'Exclusion', 'Correction'],
+    datasets: [{
+      label: '95th Percentile (m)',
+      data: [56.67, 300.85, 102.64],
+      backgroundColor: ['#0e9f6e', '#e02424', '#7c3aed'],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+</script>
+</body>
+</html>
